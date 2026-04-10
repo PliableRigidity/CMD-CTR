@@ -1,0 +1,8 @@
+INFO:     Started server process [23016]
+INFO:     Waiting for application startup.
+2026-04-09 21:21:21 - backend.app.core.application - INFO - Assistant platform initialized
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-04-09 21:22:29 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+2026-04-09 21:24:18 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
+2026-04-09 21:24:55 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"

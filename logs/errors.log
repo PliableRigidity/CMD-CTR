@@ -1,0 +1,22 @@
+2026-04-09 20:07:40,240 - backend.core.router - ERROR - [router.py:239] - Error in decision mode processing - (<class 'FileNotFoundError'>, FileNotFoundError(2, 'No such file or directory'), <traceback object at 0x000001D4DE645F80>)
+Traceback (most recent call last):
+  File "C:\Users\IshaanV\Documents\GitHub\Assistant\backend\core\router.py", line 218, in _process_decision_mode
+    decision_result = run_pipeline(magi_input)
+  File "C:\Users\IshaanV\Documents\GitHub\Assistant\backend\modes\decision\orchestrator.py", line 39, in run_pipeline
+    situation_model = generate_world_model(user_input)
+  File "C:\Users\IshaanV\Documents\GitHub\Assistant\backend\modes\decision\world_model.py", line 15, in generate_world_model
+    system_prompt=load_prompt(WORLD_MODEL_PROMPT),
+                  ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\IshaanV\Documents\GitHub\Assistant\backend\modes\decision\models.py", line 18, in load_prompt
+    return Path(prompt_path).read_text(encoding="utf-8").strip()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\IshaanV\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 546, in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\IshaanV\AppData\Local\Programs\Python\Python313\Lib\pathlib\_abc.py", line 632, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\IshaanV\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 537, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\IshaanV\\Documents\\GitHub\\Assistant\\backend\\prompts\\world_model.txt'

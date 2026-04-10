@@ -1,0 +1,185 @@
+MAGI Project Description
+
+What this project is
+
+MAGI is a local decision-support system inspired by the MAGI computer concept, where multiple independent "brains" evaluate the same problem before a final decision is presented. Instead of behaving like a single chatbot that produces one answer directly, this project breaks decision-making into several structured stages and lets different models analyze, compare, and vote on possible actions.
+
+The project combines:
+
+- a FastAPI backend
+- a locally hosted Ollama model stack
+- a React/Vite frontend called magi_ui
+- a structured, multi-stage orchestration pipeline
+
+The result is a system that feels less like a single LLM response and more like a deliberation engine.
+
+What this project does
+
+The system accepts a user decision prompt made up of:
+
+- a question or problem
+- an optional goal
+- optional constraints
+
+It then transforms that input into a structured reasoning pipeline that produces:
+
+- a normalized situation model
+- several candidate actions
+- first-round judgments from three separate "brains"
+- a second-round debate where those brains can react to each other
+- final votes
+- a majority result
+- a final chair summary
+
+This means the project is not only generating a recommendation, but also generating the reasoning structure around that recommendation. The user can see how the system understood the problem, what options it considered, how the agents voted, and what final result emerged.
+
+In practical terms, the project acts as a local AI deliberation board for evaluating choices rather than answering with one opaque completion.
+
+How the project works
+
+1. User input stage
+
+The user enters a problem, optional goal, and optional constraints in the frontend UI. That request is sent from the magi_ui React app to the backend API endpoint at:
+
+http://localhost:8000/api/decide
+
+The backend validates that input using Pydantic schemas before any model call is made.
+
+2. World model stage
+
+The first backend stage turns the raw user prompt into a cleaner structured representation of the situation.
+
+Instead of passing the user text directly to the later stages, the system asks a model to produce a normalized world model containing fields such as:
+
+- problem summary
+- goal
+- constraints
+- risks
+- unknowns
+
+This makes the later reasoning steps more consistent because every downstream stage works from the same structured understanding of the problem.
+
+3. Action generation stage
+
+Once the world model is created, another model generates a short list of candidate actions. The backend normalizes these options into a bounded action set, typically 3 to 5 possible choices.
+
+Each action is assigned a stable identifier such as:
+
+- ACTION_1
+- ACTION_2
+- ACTION_3
+
+This matters because the debate stage is not open-ended. All brains must evaluate the same shared action list rather than inventing unrelated solutions.
+
+4. Brain evaluation stage
+
+The core MAGI behavior comes from three separate decision agents:
+
+- SARASWATI
+- LAKSHMI
+- DURGA
+
+Each brain is assigned its own prompt and model configuration. In the first round, each brain receives:
+
+- the structured situation model
+- the candidate actions
+
+Each brain then returns a structured evaluation that includes:
+
+- selected action
+- confidence
+- reason
+- risk
+- next action
+- critique
+
+This gives each brain an initial position.
+
+5. Debate round
+
+After the first round, the system runs a second round. In this phase, each brain sees:
+
+- its own earlier position
+- the responses from the other brains
+
+This allows the system to simulate disagreement, persuasion, and reconsideration. A brain can keep its original position or change its mind after seeing peer feedback.
+
+The output of this round becomes the final vote for each brain.
+
+6. Vote summarization
+
+Once all final votes are collected, the backend tallies them. The voting system checks whether any one action has a strict majority of the final votes.
+
+Possible outcomes include:
+
+- a winning action if one option has more than half the votes
+- ABSTAIN for a non-committal response
+- UNDECIDED if no action receives a majority
+
+This is important because the system does not force consensus. If the panel does not converge, the final result can remain unresolved.
+
+7. Chair summary stage
+
+After the votes are summarized, a separate chair model reviews:
+
+- the structured situation model
+- the candidate actions
+- the final votes
+- the majority decision
+
+It then produces a final summary describing the dominant reasoning, the recommendation, and the overall result.
+
+If the chair model fails, the backend still returns a fallback summary so that the pipeline can complete cleanly.
+
+Frontend behavior
+
+The magi_ui frontend is responsible for displaying the process and result. It is not just a form and output pane. It visually represents the three brains, their processing state, the final result, and supporting data such as:
+
+- the world-model summary
+- vote counts
+- candidate options
+- the final verdict
+
+This makes the system feel like an interactive control panel rather than a plain chat interface.
+
+Why this design matters
+
+The main idea behind the project is that some decisions benefit from structured disagreement more than from a single fast answer. A single-model system tends to collapse reasoning into one output. This project instead exposes intermediate reasoning steps and forces explicit comparison between options.
+
+That gives several advantages:
+
+- the decision path is more inspectable
+- tradeoffs become visible
+- disagreement can be surfaced rather than hidden
+- the final result is grounded in explicit votes
+
+The tradeoff is that the system is more complex than a simple one-shot LLM app. It depends on multiple models, multiple prompts, structured validation, and a multi-step orchestration flow.
+
+Main technical components
+
+Backend:
+
+- FastAPI application for the API
+- orchestration logic for the full pipeline
+- Pydantic schemas for strict structured outputs
+- voting logic for summarizing results
+- Ollama integration for local model inference
+
+Frontend:
+
+- React UI
+- Vite dev server
+- MAGI-inspired visual layout for presenting the brains and decision state
+
+Model stack:
+
+- phi4-mini-reasoning:latest
+- qwen2.5:3b
+- gemma2:2b
+- phi3:mini
+
+Overall summary
+
+MAGI is a local multi-agent reasoning system for decision support. It accepts a user problem, structures it, generates candidate actions, lets several model-driven agents debate those actions, computes a final vote, and presents the result in a stylized interface.
+
+In short, it is a local AI deliberation engine rather than a standard chatbot.

@@ -1,0 +1,48 @@
+# Core Framework
+fastapi>=0.115.0
+uvicorn>=0.30.0
+pydantic>=2.8.0
+python-dotenv>=1.0.0
+
+# HTTP & API
+requests>=2.32.0
+httpx>=0.27.0
+websockets>=12.0
+aiohttp>=3.10.0
+
+# Data & Serialization
+pyyaml>=6.0
+python-multipart>=0.0.6
+beautifulsoup4>=4.12.0
+pycaw>=20251023
+comtypes>=1.4.0
+
+# Voice (Phase 2)
+# OpenAI Whisper for speech-to-text
+openai-whisper>=20240930
+# Text-to-speech options
+pyttsx3>=2.90
+# Audio processing
+librosa>=0.10.0
+soundfile>=0.12.1
+numpy>=1.26.0
+
+# Logging & Monitoring
+python-json-logger>=2.0.7
+
+# Database & Storage (for future use)
+sqlalchemy>=2.0.0
+# For embeddings and semantic search
+sentence-transformers>=3.0.0
+scikit-learn>=1.4.0
+
+# Utility
+python-dateutil>=2.8.2
+pytz>=2024.1
+
+# Development (optional, install separately)
+# pytest>=7.4.0
+# pytest-asyncio>=0.23.0
+# black>=24.1.0
+# ruff>=0.2.0
+# mypy>=1.8.0

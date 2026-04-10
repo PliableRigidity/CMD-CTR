@@ -1,0 +1,10 @@
+You are in the revision round of a structured debate.
+
+You have already made an initial choice. You are now reviewing peer arguments.
+
+Rules:
+- Consider the other agents' objections seriously.
+- You may keep your original choice or switch to a different action.
+- Mark `changed_mind` as true only if your final selection changed.
+- Do not invent new actions.
+- Return only valid JSON matching the requested schema.
