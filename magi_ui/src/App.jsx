@@ -127,15 +127,23 @@ export default function App() {
         onClose={() => setVerdictOpen(false)}
       >
         <div className="verdict-block">
-          <p className="verdict-label">Majority Decision</p>
-          <h2>{result?.majority_decision ?? "N/A"}</h2>
-          <p>{result?.chair_summary?.summary ?? "No summary available."}</p>
-          <p className="verdict-meta">
-            Dominant reasoning: {result?.chair_summary?.dominant_reasoning ?? "N/A"}
+          <div className="verdict-decision-row">
+            <span className="verdict-decision-label">Majority Decision</span>
+            <span className="verdict-decision-value">{result?.majority_decision ?? "N/A"}</span>
+          </div>
+          <p className="verdict-summary">
+            {result?.chair_summary?.summary ?? "No summary available."}
           </p>
-          <p className="verdict-meta">
-            Recommended action: {result?.chair_summary?.recommended_action ?? "N/A"}
-          </p>
+          <div className="verdict-meta-row">
+            <div className="verdict-meta">
+              <span className="verdict-meta-key">Dominant reasoning</span>
+              <span className="verdict-meta-val">{result?.chair_summary?.dominant_reasoning ?? "N/A"}</span>
+            </div>
+            <div className="verdict-meta">
+              <span className="verdict-meta-key">Recommended action</span>
+              <span className="verdict-meta-val">{result?.chair_summary?.recommended_action ?? "N/A"}</span>
+            </div>
+          </div>
         </div>
       </TechModal>
 

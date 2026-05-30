@@ -15,94 +15,276 @@ def _is_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"}
 
 
+# ---------------------------------------------------------------------------
+# Built-in site shortcuts  (name → URL)
+# ---------------------------------------------------------------------------
+SITE_ALIASES: dict[str, str] = {
+    # Search & productivity
+    "youtube": "https://www.youtube.com",
+    "gmail": "https://mail.google.com",
+    "google": "https://www.google.com",
+    "google drive": "https://drive.google.com",
+    "google docs": "https://docs.google.com",
+    "google sheets": "https://sheets.google.com",
+    "google calendar": "https://calendar.google.com",
+    "google meet": "https://meet.google.com",
+    # Dev tools
+    "github": "https://github.com",
+    "stackoverflow": "https://stackoverflow.com",
+    "stack overflow": "https://stackoverflow.com",
+    "mdn": "https://developer.mozilla.org",
+    "npm": "https://www.npmjs.com",
+    "pypi": "https://pypi.org",
+    "docker hub": "https://hub.docker.com",
+    # AI tools
+    "claude": "https://claude.ai",
+    "chatgpt": "https://chat.openai.com",
+    "perplexity": "https://www.perplexity.ai",
+    "gemini": "https://gemini.google.com",
+    # Media & social
+    "spotify": "https://open.spotify.com",
+    "twitter": "https://twitter.com",
+    "reddit": "https://www.reddit.com",
+    "linkedin": "https://www.linkedin.com",
+    "twitch": "https://www.twitch.tv",
+    "netflix": "https://www.netflix.com",
+    # News
+    "bbc": "https://www.bbc.com/news",
+    "hackernews": "https://news.ycombinator.com",
+    "hacker news": "https://news.ycombinator.com",
+    # Tools
+    "notion": "https://www.notion.so",
+    "figma": "https://www.figma.com",
+    "canva": "https://www.canva.com",
+    "excalidraw": "https://excalidraw.com",
+    "linear": "https://linear.app",
+    "trello": "https://trello.com",
+}
+
+# ---------------------------------------------------------------------------
+# Default actions
+# ---------------------------------------------------------------------------
+_DEFAULT_ACTIONS: list[dict] = [
+    # Editors & IDEs
+    {
+        "id": "open_vscode",
+        "label": "VS Code",
+        "kind": "app",
+        "target": "code",
+        "description": "Launch Visual Studio Code.",
+        "aliases": ["vscode", "code", "visual studio code", "vs code"],
+    },
+    {
+        "id": "open_cursor",
+        "label": "Cursor",
+        "kind": "app",
+        "target": "cursor",
+        "description": "Launch Cursor AI editor.",
+        "aliases": ["cursor"],
+    },
+    # Terminals
+    {
+        "id": "open_terminal",
+        "label": "Terminal",
+        "kind": "app",
+        "target": "powershell.exe",
+        "description": "Launch a PowerShell terminal.",
+        "aliases": ["terminal", "powershell", "shell", "cmd"],
+    },
+    {
+        "id": "open_wt",
+        "label": "Windows Terminal",
+        "kind": "app",
+        "target": "wt.exe",
+        "description": "Launch Windows Terminal.",
+        "aliases": ["windows terminal", "wt"],
+    },
+    # Browsers
+    {
+        "id": "open_browser",
+        "label": "Browser",
+        "kind": "url",
+        "target": "https://www.google.com",
+        "description": "Open the default browser.",
+        "aliases": ["browser", "web", "google chrome", "chrome", "firefox", "edge"],
+    },
+    # Music & media
+    {
+        "id": "open_spotify",
+        "label": "Spotify",
+        "kind": "app",
+        "target": "spotify:",
+        "description": "Launch Spotify.",
+        "aliases": ["spotify", "music"],
+    },
+    # File management
+    {
+        "id": "open_explorer",
+        "label": "File Explorer",
+        "kind": "app",
+        "target": "explorer.exe",
+        "description": "Open Windows File Explorer.",
+        "aliases": ["explorer", "file explorer", "files", "finder"],
+    },
+    # Dev sites
+    {
+        "id": "open_github",
+        "label": "GitHub",
+        "kind": "url",
+        "target": "https://github.com",
+        "description": "Open GitHub.",
+        "aliases": ["github"],
+    },
+    {
+        "id": "open_claude",
+        "label": "Claude.ai",
+        "kind": "url",
+        "target": "https://claude.ai",
+        "description": "Open Claude.ai in the browser.",
+        "aliases": ["claude", "claude ai", "claude.ai", "anthropic"],
+    },
+    # Productivity
+    {
+        "id": "open_notion",
+        "label": "Notion",
+        "kind": "url",
+        "target": "https://www.notion.so",
+        "description": "Open Notion.",
+        "aliases": ["notion"],
+    },
+    {
+        "id": "open_calendar",
+        "label": "Google Calendar",
+        "kind": "url",
+        "target": "https://calendar.google.com",
+        "description": "Open Google Calendar.",
+        "aliases": ["calendar", "google calendar"],
+    },
+    # Communications
+    {
+        "id": "open_gmail",
+        "label": "Gmail",
+        "kind": "url",
+        "target": "https://mail.google.com",
+        "description": "Open Gmail.",
+        "aliases": ["gmail", "email", "mail"],
+    },
+    # Workspace
+    {
+        "id": "assistant_workspace",
+        "label": "CMD-CTR Workspace",
+        "kind": "workspace",
+        "target": str(Path(__file__).resolve().parent.parent.parent.parent),
+        "description": "Open this project's root folder.",
+        "aliases": ["workspace", "assistant repo", "cmd-ctr", "project"],
+    },
+    # System utilities
+    {
+        "id": "open_task_manager",
+        "label": "Task Manager",
+        "kind": "app",
+        "target": "taskmgr.exe",
+        "description": "Open Windows Task Manager.",
+        "aliases": ["task manager", "taskmgr", "processes"],
+    },
+    {
+        "id": "open_settings",
+        "label": "Windows Settings",
+        "kind": "app",
+        "target": "ms-settings:",
+        "description": "Open Windows Settings.",
+        "aliases": ["settings", "windows settings", "control panel"],
+    },
+    {
+        "id": "open_calculator",
+        "label": "Calculator",
+        "kind": "app",
+        "target": "calc.exe",
+        "description": "Open the Windows Calculator.",
+        "aliases": ["calculator", "calc"],
+    },
+    {
+        "id": "open_snipping",
+        "label": "Snipping Tool",
+        "kind": "app",
+        "target": "SnippingTool.exe",
+        "description": "Open the Windows Snipping Tool for screenshots.",
+        "aliases": ["snipping tool", "screenshot", "snip", "snipscreen"],
+    },
+]
+
+
 class ActionService:
     def __init__(self) -> None:
-        repo_root = str(Path.cwd())
-        self._actions = [
-            ActionDescriptor(
-                id="open_vscode",
-                label="Open VS Code",
-                kind="app",
-                target="code",
-                description="Launch Visual Studio Code.",
-                aliases=["vscode", "code", "visual studio code"],
-            ),
-            ActionDescriptor(
-                id="open_browser",
-                label="Open Browser",
-                kind="url",
-                target="https://www.google.com",
-                description="Open the default browser.",
-                aliases=["browser", "web", "google"],
-            ),
-            ActionDescriptor(
-                id="open_spotify",
-                label="Open Spotify",
-                kind="app",
-                target="spotify",
-                description="Launch Spotify if installed.",
-                aliases=["spotify"],
-            ),
-            ActionDescriptor(
-                id="assistant_repo",
-                label="Assistant Workspace",
-                kind="workspace",
-                target=repo_root,
-                description="Open this repository workspace.",
-                aliases=["assistant repo", "current repo", "workspace"],
-            ),
-            ActionDescriptor(
-                id="open_github",
-                label="Open GitHub",
-                kind="url",
-                target="https://github.com",
-                description="Open GitHub in the browser.",
-                aliases=["github"],
-            ),
-            ActionDescriptor(
-                id="open_terminal",
-                label="Open Terminal",
-                kind="app",
-                target="powershell.exe",
-                description="Launch a terminal window.",
-                aliases=["terminal", "powershell", "shell"],
-            ),
+        self._actions: list[ActionDescriptor] = [
+            ActionDescriptor(**a) for a in _DEFAULT_ACTIONS
         ]
-        self._site_aliases = {
-            "youtube": "https://www.youtube.com",
-            "gmail": "https://mail.google.com",
-            "github": "https://github.com",
-            "spotify": "https://open.spotify.com",
-        }
+        self._site_aliases: dict[str, str] = dict(SITE_ALIASES)
+
+    # ------------------------------------------------------------------
+    # Registration
+    # ------------------------------------------------------------------
+
+    def register_action(self, action: ActionDescriptor) -> None:
+        """Dynamically add or replace an action at runtime."""
+        self._actions = [a for a in self._actions if a.id != action.id]
+        self._actions.append(action)
+
+    def register_site(self, name: str, url: str) -> None:
+        self._site_aliases[name.lower()] = url
+
+    # ------------------------------------------------------------------
+    # Queries
+    # ------------------------------------------------------------------
 
     def list_actions(self) -> list[ActionDescriptor]:
         return self._actions
 
+    # ------------------------------------------------------------------
+    # Execution
+    # ------------------------------------------------------------------
+
     def open_registered_app(self, action_id: str, args: list[str] | None = None) -> ActionExecutionResponse:
-        action = next((item for item in self._actions if item.id == action_id), None)
+        action = next((a for a in self._actions if a.id == action_id), None)
         if action is None:
-            return ActionExecutionResponse(success=False, action=action_id, message="Action not allowlisted.")
+            return ActionExecutionResponse(success=False, action=action_id, message="Action not found.")
         return self.execute_action(action, args or [])
 
     def execute_alias(self, value: str) -> ActionExecutionResponse:
         normalized = value.strip().lower()
+
+        # Exact site alias match
         if normalized in self._site_aliases:
             return self.open_url(self._site_aliases[normalized])
+
+        # Exact action id / alias match
         for action in self._actions:
-            if normalized == action.id or normalized in [alias.lower() for alias in action.aliases]:
+            aliases_lower = [a.lower() for a in action.aliases]
+            if normalized == action.id or normalized in aliases_lower:
                 return self.execute_action(action, [])
+
+        # Partial site alias match (e.g. "youtube" in "open youtube music")
         for alias, url in self._site_aliases.items():
             if alias in normalized:
                 return self.open_url(url)
+
+        # Partial action alias match
         for action in self._actions:
             if any(alias.lower() in normalized for alias in action.aliases):
                 args = []
                 if action.id == "open_vscode" and ("repo" in normalized or "workspace" in normalized):
                     args = [str(Path.cwd())]
                 return self.execute_action(action, args)
+
+        # Raw URL
         if _is_url(value):
             return self.open_url(value)
-        return ActionExecutionResponse(success=False, action=value, message="Unknown action or alias.")
+
+        # Domain shorthand (e.g. "github.com")
+        if "." in value and " " not in value:
+            return self.open_url(f"https://{value}")
+
+        return ActionExecutionResponse(success=False, action=value, message=f"Unknown action or alias: '{value}'.")
 
     def execute_action(self, action: ActionDescriptor, args: list[str]) -> ActionExecutionResponse:
         try:
@@ -111,8 +293,7 @@ class ActionService:
             if action.kind == "workspace":
                 os.startfile(action.target)
                 return ActionExecutionResponse(
-                    success=True,
-                    action=action.id,
+                    success=True, action=action.id,
                     message=f"Opened workspace at {action.target}.",
                     opened_target=action.target,
                 )
@@ -120,17 +301,11 @@ class ActionService:
                 return self._launch_app(action.target, action.id, args)
         except Exception as exc:
             return ActionExecutionResponse(
-                success=False,
-                action=action.id,
-                message=f"Failed to execute action: {exc}",
+                success=False, action=action.id,
+                message=f"Failed to execute: {exc}",
                 opened_target=action.target,
             )
-        return ActionExecutionResponse(
-            success=True,
-            action=action.id,
-            message="Action executed.",
-            opened_target=action.target,
-        )
+        return ActionExecutionResponse(success=True, action=action.id, message="Action executed.", opened_target=action.target)
 
     def open_url(self, target: str) -> ActionExecutionResponse:
         if not _is_url(target):
@@ -143,47 +318,62 @@ class ActionService:
                 return ActionExecutionResponse(success=False, action="open_url", message="Invalid URL or alias.")
         webbrowser.open(target, new=2)
         return ActionExecutionResponse(
-            success=True,
-            action="open_url",
-            message="Opened URL in the default browser.",
+            success=True, action="open_url",
+            message=f"Opened {target} in the browser.",
             opened_target=target,
         )
 
     def _launch_app(self, target: str, action_id: str, args: list[str]) -> ActionExecutionResponse:
+        # VS Code special case
         if target == "code":
             executable = shutil.which("code") or shutil.which("code.cmd")
             if executable:
                 subprocess.Popen([executable, *args] if args else [executable])
                 return ActionExecutionResponse(
-                    success=True,
-                    action=action_id,
+                    success=True, action=action_id,
                     message="Launched Visual Studio Code.",
                     opened_target=executable,
                 )
             repo = args[0] if args else str(Path.cwd())
             os.startfile(repo)
             return ActionExecutionResponse(
-                success=True,
-                action=action_id,
-                message="VS Code executable not found; opened the requested folder instead.",
+                success=True, action=action_id,
+                message="VS Code not found on PATH; opened the folder instead.",
                 opened_target=repo,
             )
 
-        launch_target = target
-        if target == "spotify":
-            launch_target = "spotify:"
-        if Path(launch_target).exists():
-            os.startfile(str(Path(launch_target)))
+        # URI schemes (ms-settings:, spotify:, etc.)
+        if ":" in target and not target.startswith("/"):
+            try:
+                os.startfile(target)
+                return ActionExecutionResponse(
+                    success=True, action=action_id,
+                    message=f"Launched {action_id}.", opened_target=target,
+                )
+            except Exception as exc:
+                return ActionExecutionResponse(
+                    success=False, action=action_id,
+                    message=f"Failed to launch {target}: {exc}",
+                )
+
+        # Path / executable
+        if Path(target).exists():
+            os.startfile(str(target))
         else:
-            executable = shutil.which(launch_target)
+            executable = shutil.which(target)
             if executable:
                 subprocess.Popen([executable, *args] if args else [executable])
             else:
-                os.startfile(launch_target)
+                try:
+                    os.startfile(target)
+                except Exception as exc:
+                    return ActionExecutionResponse(
+                        success=False, action=action_id,
+                        message=f"Could not launch '{target}': {exc}",
+                    )
         return ActionExecutionResponse(
-            success=True,
-            action=action_id,
+            success=True, action=action_id,
             message=f"Launched {action_id}.",
-            opened_target=launch_target,
+            opened_target=target,
             details={"args": args},
         )

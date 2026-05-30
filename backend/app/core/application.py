@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from backend.app.api import actions, assistant, decision, devices, events, maps, mode, system, voice, web, world
+from backend.app.api import actions, assistant, decision, devices, events, maps, memory, mode, system, voice, web, world
 from backend.app.orchestration.assistant_router import AssistantPlatformRouter
 from backend.utils import get_logger, setup_logging
 
@@ -53,4 +53,5 @@ def create_app() -> FastAPI:
     app.include_router(web.router, prefix="/api")
     app.include_router(system.router, prefix="/api")
     app.include_router(events.router, prefix="/api")
+    app.include_router(memory.router, prefix="/api")
     return app

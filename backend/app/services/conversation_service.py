@@ -1,5 +1,7 @@
-import time
+from __future__ import annotations
+
 import re
+import time
 
 import httpx
 
@@ -16,6 +18,25 @@ from backend.app.services.system_control_service import SystemControlService
 from backend.app.services.web_service import WebIntelligenceService
 from backend.app.web.schemas.models import SearchRequest
 from backend.config import KEEP_ALIVE, OLLAMA_CHAT_URL
+from backend.memory.memory_service import MemoryService
+
+SYSTEM_PROMPT = (
+    "You are CMD-CTR, a local-first personal AI command center. "
+    "You are concise, sharp, and operationally aware. "
+    "You remember context from earlier in the conversation. "
+    "When the user refers to something said earlier, use the provided conversation history. "
+    "Never say you cannot access prior messages — the history is provided to you directly."
+)
+
+# Detect "remember that X is Y" / "my name is X" style inputs
+_REMEMBER_RE = re.compile(
+    r"(?:remember that|note that|my (?P<key>\w+) is)\s+(?P<value>.+)",
+    re.I,
+)
+_RECALL_RE = re.compile(
+    r"what(?:'s| is) my (\w+)",
+    re.I,
+)
 
 
 class ConversationService:
@@ -25,30 +46,51 @@ class ConversationService:
         action_service: ActionService | None = None,
         system_control_service: SystemControlService | None = None,
         maps_service: MapsService | None = None,
+        memory_service: MemoryService | None = None,
     ) -> None:
         self.model_name = "qwen2.5:3b"
         self.web_service = web_service
         self.action_service = action_service
         self.system_control_service = system_control_service
         self.maps_service = maps_service
+        self.memory_service = memory_service
 
     async def handle(self, request: AssistantRequest) -> AssistantResponse:
         started = time.perf_counter()
+
+        # --- 1. Handle memory recall/save commands first ---
+        memory_response = self._handle_memory_command(request)
+        if memory_response is not None:
+            if self.memory_service:
+                self.memory_service.save_turn(
+                    request.session_id, request.query, memory_response.answer, "conversation"
+                )
+            memory_response.processing_time_ms = (time.perf_counter() - started) * 1000
+            return memory_response
+
+        # --- 2. Handle local system commands (open, volume, navigate) ---
         command_response = await self._handle_local_command(request)
         if command_response is not None:
+            if self.memory_service:
+                self.memory_service.save_turn(
+                    request.session_id, request.query, command_response.answer, "conversation"
+                )
             command_response.processing_time_ms = (time.perf_counter() - started) * 1000
             return command_response
 
+        # --- 3. Decide whether to use live web ---
         use_web = self._should_use_web(request)
         sources = []
-        payload = {"suggested_mode": "conversation", "web_used": use_web}
+        payload: dict = {"suggested_mode": "conversation", "web_used": use_web}
         reasoning = "Fast direct response path"
 
         if use_web and self.web_service is not None:
             search_response = await self.web_service.search(
                 SearchRequest(
                     query=request.query,
-                    category=request.metadata.get("web_category", "news" if "news" in request.query.lower() else "general"),
+                    category=request.metadata.get(
+                        "web_category", "news" if "news" in request.query.lower() else "general"
+                    ),
                     limit=4,
                 )
             )
@@ -57,7 +99,15 @@ class ConversationService:
             payload["search_results"] = [item.model_dump() for item in search_response.results]
             reasoning = "Source-aware response generated from live web search results."
         else:
-            answer = await self._generate_response(request.query)
+            # --- 4. Build Ollama messages with history ---
+            history = []
+            if self.memory_service:
+                history = self.memory_service.get_ollama_messages(request.session_id, limit=10)
+            answer = await self._generate_response(request.query, history)
+
+        # --- 5. Persist exchange ---
+        if self.memory_service:
+            self.memory_service.save_turn(request.session_id, request.query, answer, "conversation")
 
         elapsed = (time.perf_counter() - started) * 1000
         return AssistantResponse(
@@ -82,20 +132,55 @@ class ConversationService:
                     timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     title="Conversation request",
                     detail=(
-                        f"Processed query in conversation mode using model hint {self.model_name}."
+                        f"Processed with {len(history) // 2 if not use_web else 0} prior turns of context."
                         if not use_web
-                        else "Processed query in conversation mode with the web intelligence layer enabled."
+                        else "Processed with live web intelligence layer enabled."
                     ),
                 )
             ],
             payload=payload,
         )
 
+    # ------------------------------------------------------------------
+    # Memory command handling ("remember that...", "what's my...")
+    # ------------------------------------------------------------------
+
+    def _handle_memory_command(self, request: AssistantRequest) -> AssistantResponse | None:
+        if self.memory_service is None:
+            return None
+        raw = request.query.strip()
+
+        # "what's my name?" / "what is my location?"
+        recall_match = _RECALL_RE.search(raw)
+        if recall_match:
+            key = recall_match.group(1).lower()
+            value = self.memory_service.recall(key)
+            if value:
+                answer = f"Your {key} is {value}."
+            else:
+                answer = f"I don't have your {key} stored. You can tell me with 'My {key} is ...'."
+            return self._simple_response("Memory Recall", answer)
+
+        # "remember that my name is Ishaan" / "my city is Bristol"
+        remember_match = _REMEMBER_RE.search(raw)
+        if remember_match:
+            key = (remember_match.group("key") or "note").lower()
+            value = remember_match.group("value").strip().rstrip(".")
+            self.memory_service.remember(key, value)
+            return self._simple_response("Memory Saved", f"Got it — I've noted that your {key} is {value}.")
+
+        return None
+
+    # ------------------------------------------------------------------
+    # Local command dispatch
+    # ------------------------------------------------------------------
+
     async def _handle_local_command(self, request: AssistantRequest) -> AssistantResponse | None:
         raw = request.query.strip()
         lowered = raw.lower()
+
         if self.action_service is not None:
-            open_match = re.match(r"^(open|launch)\s+(.+)$", raw, flags=re.I)
+            open_match = re.match(r"^(open|launch|start)\s+(.+)$", raw, flags=re.I)
             if open_match:
                 target = open_match.group(2).strip()
                 if target.lower().startswith("http://") or target.lower().startswith("https://"):
@@ -121,22 +206,22 @@ class ConversationService:
                 )
 
         if self.system_control_service is not None:
-            if lowered in {"volume up", "increase volume"}:
+            if lowered in {"volume up", "increase volume", "louder"}:
                 state = self.system_control_service.volume_up()
                 return self._audio_response("Volume increased.", state)
-            if lowered in {"volume down", "decrease volume"}:
+            if lowered in {"volume down", "decrease volume", "quieter"}:
                 state = self.system_control_service.volume_down()
                 return self._audio_response("Volume decreased.", state)
-            if lowered in {"mute", "mute audio", "unmute"}:
+            if lowered in {"mute", "mute audio", "unmute", "silence"}:
                 state = self.system_control_service.toggle_mute()
                 return self._audio_response("Mute toggled.", state)
-            set_match = re.match(r"^(set volume to)\s+(\d{1,3})", lowered)
+            set_match = re.match(r"^set volume to\s+(\d{1,3})", lowered)
             if set_match:
-                state = self.system_control_service.set_volume(int(set_match.group(2)))
+                state = self.system_control_service.set_volume(int(set_match.group(1)))
                 return self._audio_response(f"Volume set to {state.volume_percent}%.", state)
 
         if self.maps_service is not None:
-            route_match = re.match(r"^(how do i get to|route to|navigate to)\s+(.+)$", lowered)
+            route_match = re.match(r"^(how do i get to|route to|navigate to|directions to)\s+(.+)$", lowered)
             if route_match:
                 destination = route_match.group(2).strip()
                 origin = request.metadata.get("origin") or request.context.get("origin") or "London"
@@ -162,6 +247,28 @@ class ConversationService:
 
         return None
 
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _simple_response(self, title: str, answer: str) -> AssistantResponse:
+        return AssistantResponse(
+            mode="conversation",
+            title=title,
+            answer=answer,
+            confidence=0.95,
+            reasoning="Handled by local memory layer.",
+            processing_time_ms=0,
+            logs=[
+                CommandLogEntry(
+                    timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    title=title,
+                    detail=answer,
+                )
+            ],
+            payload={},
+        )
+
     def _audio_response(self, message: str, state) -> AssistantResponse:
         return AssistantResponse(
             mode="conversation",
@@ -185,49 +292,34 @@ class ConversationService:
             return True
         lowered = request.query.lower()
         keywords = (
-            "latest",
-            "current",
-            "today",
-            "news",
-            "headline",
-            "search",
-            "look up",
-            "web",
-            "website",
-            "documentation",
-            "docs",
-            "recent",
+            "latest", "current", "today", "news", "headline", "search",
+            "look up", "web", "website", "documentation", "docs", "recent",
+            "what happened", "breaking",
         )
         return any(keyword in lowered for keyword in keywords)
 
     def _summarize_sources(self, query: str, sources) -> str:
         if not sources:
-            return f"I attempted a live web lookup for '{query}', but no readable sources were returned."
-
+            return f"I searched the web for '{query}' but found no readable sources."
         bullets = []
         for source in sources[:3]:
             detail = source.snippet or "No snippet available."
-            bullets.append(f"{source.title} ({source.source}): {detail}")
-        return "Live web summary:\n- " + "\n- ".join(bullets)
+            bullets.append(f"**{source.title}** ({source.source}): {detail}")
+        return "**Live web summary:**\n\n" + "\n\n".join(bullets)
 
-    async def _generate_response(self, query: str) -> str:
+    async def _generate_response(self, query: str, history: list[dict[str, str]]) -> str:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": query})
+
         payload = {
             "model": self.model_name,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a local-first personal AI assistant for a futuristic command center. "
-                        "Be concise, helpful, and operationally aware."
-                    ),
-                },
-                {"role": "user", "content": query},
-            ],
+            "messages": messages,
             "stream": False,
             "keep_alive": KEEP_ALIVE,
         }
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
+            async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.post(OLLAMA_CHAT_URL, json=payload)
                 response.raise_for_status()
             content = response.json().get("message", {}).get("content", "").strip()
@@ -236,8 +328,7 @@ class ConversationService:
         except Exception:
             pass
 
-        trimmed = query.strip()
         return (
-            f"I've switched into conversation mode for: {trimmed}. "
-            "Local conversation scaffolding is active; if Ollama is unavailable, this fallback response keeps the platform usable."
+            f"I've noted your query: {query.strip()}. "
+            "The local model is unavailable right now — check that Ollama is running."
         )

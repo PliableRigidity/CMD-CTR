@@ -14,12 +14,12 @@ function MessageBubble({ message }) {
   }
 
   return (
-    <article className="message message--assistant">
+    <article className={`message message--assistant${message.isHistory ? " message--history" : ""}`}>
       <div className="message__meta">
-        <p className="message__label">{message.title || "Assistant"}</p>
+        <p className="message__label">{message.title || "CMD-CTR"}</p>
         <span>{message.mode === "decision" ? "COUNCIL" : "CORE"}</span>
       </div>
-      <p>{message.answer}</p>
+      <p style={{ whiteSpace: "pre-wrap" }}>{message.answer}</p>
       {message.reasoning ? <p className="message__reasoning">{message.reasoning}</p> : null}
       {message.sources?.length ? (
         <div className="source-list">
@@ -44,6 +44,7 @@ export default function ConversationPanel({
   draft,
   onDraftChange,
   onSubmit,
+  onClear,
 }) {
   const listRef = useRef(null);
   const inputRef = useRef(null);
@@ -80,9 +81,30 @@ export default function ConversationPanel({
           <p className="eyebrow">Mission Core / Assistant Bus</p>
           <h2>Assistant Channel</h2>
         </div>
-        <span className={`state-pill state-pill--${pending ? "busy" : "idle"}`}>
-          {pending ? "Thinking" : mode === "decision" ? "Decision Council Ready" : "Conversation Ready"}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          {onClear ? (
+            <button
+              type="button"
+              onClick={onClear}
+              title="Clear conversation history"
+              style={{
+                background: "transparent",
+                border: "1px solid var(--border)",
+                color: "var(--muted)",
+                padding: "0.2rem 0.6rem",
+                borderRadius: "4px",
+                fontSize: "0.7rem",
+                cursor: "pointer",
+                letterSpacing: "0.05em",
+              }}
+            >
+              CLEAR
+            </button>
+          ) : null}
+          <span className={`state-pill state-pill--${pending ? "busy" : "idle"}`}>
+            {pending ? "Thinking" : mode === "decision" ? "Decision Council Ready" : "Conversation Ready"}
+          </span>
+        </div>
       </div>
 
       <div className="channel-statusbar">
@@ -92,9 +114,23 @@ export default function ConversationPanel({
       </div>
 
       <div className="message-list" ref={listRef}>
+        {messages.length === 0 && !pending ? (
+          <p style={{ color: "var(--muted)", textAlign: "center", padding: "2rem", fontSize: "0.85rem" }}>
+            Initialising...
+          </p>
+        ) : null}
         {messages.map((message) => (
           <MessageBubble key={message.id} message={message} />
         ))}
+        {pending ? (
+          <article className="message message--assistant">
+            <div className="message__meta">
+              <p className="message__label">CMD-CTR</p>
+              <span>PROCESSING</span>
+            </div>
+            <p style={{ color: "var(--muted)", fontStyle: "italic" }}>Processing...</p>
+          </article>
+        ) : null}
       </div>
 
       {error ? <div className="error-banner">{error}</div> : null}
@@ -113,7 +149,7 @@ export default function ConversationPanel({
             placeholder={
               mode === "decision"
                 ? "Submit a tradeoff, recommendation, or strategic problem for council review."
-                : "Issue a command, ask a question, search live information, or launch a tool."
+                : "Issue a command, ask a question, or say 'open [app]' to launch something."
             }
             rows={3}
           />

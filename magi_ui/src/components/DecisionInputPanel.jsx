@@ -1,61 +1,72 @@
 import { useState } from "react";
 
 export default function DecisionInputPanel({ onSubmit, busy }) {
-  const [problem, setProblem] = useState("");
-  const [goal, setGoal] = useState("");
+  const [problem, setProblem]         = useState("");
+  const [goal, setGoal]               = useState("");
   const [constraints, setConstraints] = useState("");
 
-  function submit(event) {
-    event.preventDefault();
+  function submit(e) {
+    e.preventDefault();
     onSubmit({
       problem,
       goal,
       constraints: constraints
         .split("\n")
-        .map((item) => item.trim())
+        .map((s) => s.trim())
         .filter(Boolean),
     });
   }
 
   return (
     <form className="input-frame" onSubmit={submit}>
-      <div className="terminal-line">
-        <span className="terminal-label">question:</span>
-        <textarea
-          className="terminal-textarea"
-          value={problem}
-          onChange={(event) => setProblem(event.target.value)}
-          placeholder="Enter the situation or decision context"
-          rows={2}
-          required
-        />
+      <p className="input-section-label">Decision Input</p>
+
+      <div className="input-row">
+        <div className="field-group">
+          <label className="field-label" htmlFor="field-problem">Situation / Question</label>
+          <textarea
+            id="field-problem"
+            className="field-textarea"
+            value={problem}
+            onChange={(e) => setProblem(e.target.value)}
+            placeholder="Describe the situation or decision you need evaluated"
+            rows={2}
+            required
+          />
+        </div>
       </div>
 
-      <div className="terminal-grid">
-        <label className="terminal-line">
-          <span className="terminal-label">goal:</span>
+      <div className="input-meta-row">
+        <div className="field-group">
+          <label className="field-label" htmlFor="field-goal">Goal</label>
           <input
-            className="terminal-input"
+            id="field-goal"
+            className="field-input"
             value={goal}
-            onChange={(event) => setGoal(event.target.value)}
-            placeholder="Optional goal"
+            onChange={(e) => setGoal(e.target.value)}
+            placeholder="Optional — what outcome are you optimising for?"
           />
-        </label>
+        </div>
 
-        <label className="terminal-line terminal-line-constraints">
-          <span className="terminal-label">constraints:</span>
+        <div className="field-group">
+          <label className="field-label" htmlFor="field-constraints">Constraints</label>
           <textarea
-            className="terminal-textarea terminal-textarea-small terminal-textarea-constraints"
+            id="field-constraints"
+            className="field-textarea field-textarea-sm"
             value={constraints}
-            onChange={(event) => setConstraints(event.target.value)}
-            placeholder="One constraint per line"
+            onChange={(e) => setConstraints(e.target.value)}
+            placeholder="One per line — time limits, resources, hard rules"
             rows={2}
           />
-        </label>
+        </div>
       </div>
 
       <div className="input-footer">
-        <button type="submit" disabled={busy || !problem.trim()}>
+        <button
+          className={`btn-execute${busy ? " btn-execute-busy" : ""}`}
+          type="submit"
+          disabled={busy || !problem.trim()}
+        >
           {busy ? "PROCESSING" : "EXECUTE"}
         </button>
       </div>

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 
 import {
+  clearHistory,
   createEventsSocket,
   executeActionAlias,
   fetchActions,
   fetchAudioState,
   fetchDevices,
+  fetchHistory,
   fetchLogs,
   fetchMode,
   fetchRoute,
@@ -47,20 +49,8 @@ export function useCommandCenterData() {
   const [actions, setActions] = useState([]);
   const [route, setRouteState] = useState(INITIAL_ROUTE);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState([
-    {
-      id: "welcome",
-      role: "assistant",
-      mode: "conversation",
-      title: "Command Center Online",
-      answer: "Conversation and decision routing are live. Action, voice, navigation, and world intelligence panels are interactive.",
-      processing_time_ms: 0,
-      sources: [],
-      agents: [],
-      logs: [],
-      payload: {},
-    },
-  ]);
+  const [sessionId] = useState("default-session");
+  const [messages, setMessages] = useState([]);
   const [logs, setLogs] = useState([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -69,7 +59,7 @@ export function useCommandCenterData() {
   useEffect(() => {
     async function load() {
       try {
-        const [modeData, voiceData, deviceData, actionData, routeData, logData, audioData] =
+        const [modeData, voiceData, deviceData, actionData, routeData, logData, audioData, historyData] =
           await Promise.all([
             fetchMode(),
             fetchVoiceStatus(),
@@ -78,6 +68,7 @@ export function useCommandCenterData() {
             fetchRoute({ origin: INITIAL_ROUTE.origin, destination: INITIAL_ROUTE.destination, travel_mode: "drive" }),
             fetchLogs(),
             fetchAudioState(),
+            fetchHistory(sessionId, 100),
           ]);
 
         setModeState(modeData.active_mode);
@@ -88,13 +79,44 @@ export function useCommandCenterData() {
         setRouteState(routeData);
         setLogs(logData);
         setAudio(audioData);
+
+        // Restore conversation history, then add welcome if empty
+        if (historyData.messages && historyData.messages.length > 0) {
+          const restored = historyData.messages.map((msg, i) => ({
+            id: `history-${i}`,
+            role: msg.role,
+            mode: msg.mode || "conversation",
+            answer: msg.content,
+            title: msg.role === "assistant" ? "CMD-CTR" : undefined,
+            processing_time_ms: 0,
+            sources: [],
+            agents: [],
+            logs: [],
+            payload: {},
+            isHistory: true,
+          }));
+          setMessages(restored);
+        } else {
+          setMessages([{
+            id: "welcome",
+            role: "assistant",
+            mode: "conversation",
+            title: "Command Center Online",
+            answer: "CMD-CTR is live. Conversation history is persisted across sessions. Ask me anything, or say 'open [app]' to launch something.",
+            processing_time_ms: 0,
+            sources: [],
+            agents: [],
+            logs: [],
+            payload: {},
+          }]);
+        }
       } catch (loadError) {
         setError(loadError.message || "Failed to load command center data.");
       }
     }
 
     load();
-  }, []);
+  }, [sessionId]);
 
   useEffect(() => {
     const socket = createEventsSocket();
@@ -172,8 +194,8 @@ export function useCommandCenterData() {
     try {
       const response =
         mode === "decision"
-          ? await sendDecision({ query: trimmed, mode: "decision" })
-          : await sendChat({ query: trimmed, mode: "conversation", metadata: route.origin ? { origin: route.origin } : {} });
+          ? await sendDecision({ query: trimmed, mode: "decision", session_id: sessionId })
+          : await sendChat({ query: trimmed, mode: "conversation", session_id: sessionId, metadata: route.origin ? { origin: route.origin } : {} });
       setMessages((current) => [
         ...current,
         {
@@ -249,6 +271,26 @@ export function useCommandCenterData() {
     }
   }
 
+  async function clearChat() {
+    try {
+      await clearHistory(sessionId);
+      setMessages([{
+        id: "cleared",
+        role: "assistant",
+        mode: "conversation",
+        title: "Memory Cleared",
+        answer: "Conversation history has been cleared. Starting fresh.",
+        processing_time_ms: 0,
+        sources: [],
+        agents: [],
+        logs: [],
+        payload: {},
+      }]);
+    } catch (clearError) {
+      setError(clearError.message || "Failed to clear history.");
+    }
+  }
+
   function openIntelBoard() {
     window.open(`${window.location.origin}/intel`, "_blank", "noopener,noreferrer");
   }
@@ -266,6 +308,7 @@ export function useCommandCenterData() {
     logs,
     pending,
     error,
+    sessionId,
     setError,
     setDraft,
     switchMode,
@@ -275,6 +318,7 @@ export function useCommandCenterData() {
     runAliasAction,
     applyAudio,
     setVoiceFlags,
+    clearChat,
     openIntelBoard,
   };
 }

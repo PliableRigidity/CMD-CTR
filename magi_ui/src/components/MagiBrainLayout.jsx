@@ -1,286 +1,209 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+const BRAIN_META = {
+  SARASWATI: { role: "Logic · Analysis", serial: "SARAS-1" },
+  LAKSHMI:   { role: "Values · Intuition", serial: "LAK-2" },
+  DURGA:     { role: "Action · Risk", serial: "DURG-3" },
+};
+
 const PANELS = [
-  { brain: "SARASWATI", label: "SARAS-1", position: "top" },
-  { brain: "LAKSHMI", label: "LAK-2", position: "left" },
-  { brain: "DURGA", label: "DURG-3", position: "right" },
+  { brain: "SARASWATI", position: "top" },
+  { brain: "LAKSHMI",   position: "left" },
+  { brain: "DURGA",     position: "right" },
 ];
 
-function getPanelStateText(state, vote) {
-  if (state === "processing") return "";
-  if (vote === "YES") return "";
-  if (vote === "NO") return "";
-  if (vote === "ABSTAIN") return "";
-  return "";
+function getStateLabel(state) {
+  switch (state) {
+    case "processing": return "DELIBERATING";
+    case "yes":        return "APPROVED";
+    case "no":         return "DISSENT";
+    case "abstain":    return "ABSTAIN";
+    default:           return "STANDBY";
+  }
 }
 
-function StatusBox({ phase, majorityDecision }) {
-  const [isBlinking, setIsBlinking] = useState(false);
+function StatusBadge({ phase, majorityDecision }) {
+  const [pulsing, setPulsing] = useState(false);
 
   useEffect(() => {
-    if (phase !== "processing") {
-      setIsBlinking(false);
-      return undefined;
-    }
-
-    let waitTimer = 0;
-    let flashTimer = 0;
+    if (phase !== "processing") { setPulsing(false); return; }
+    let t1, t2;
     let cancelled = false;
-
-    const randomBetween = (min, max) =>
-      Math.floor(Math.random() * (max - min + 1)) + min;
-
-    const scheduleBlink = () => {
-      waitTimer = window.setTimeout(() => {
+    const rand = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a;
+    const cycle = () => {
+      t1 = window.setTimeout(() => {
         if (cancelled) return;
-        setIsBlinking(true);
-
-        flashTimer = window.setTimeout(() => {
+        setPulsing(true);
+        t2 = window.setTimeout(() => {
           if (cancelled) return;
-          setIsBlinking(false);
-          scheduleBlink();
-        }, randomBetween(50, 120));
-      }, randomBetween(80, 300));
+          setPulsing(false);
+          cycle();
+        }, rand(60, 130));
+      }, rand(90, 320));
     };
-
-    scheduleBlink();
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(waitTimer);
-      window.clearTimeout(flashTimer);
-    };
+    cycle();
+    return () => { cancelled = true; clearTimeout(t1); clearTimeout(t2); };
   }, [phase]);
 
-  let statusLabel = "待機";
-  let statusColor = "var(--blue)";
+  let statusClass = "status-idle";
+  let kanji = "待機";
+  let latin = "STANDBY";
 
-  if (majorityDecision) {
-    const rawDecision = String(majorityDecision).toUpperCase();
-    if (rawDecision === "NO" || rawDecision === "REJECTED") {
-      statusLabel = "拒絶";
-      statusColor = "var(--red)";
-    } else if (rawDecision === "ABSTAIN" || rawDecision === "UNDECIDED") {
-      statusLabel = "棄権";
-      statusColor = "var(--amber)";
+  if (phase === "processing") {
+    statusClass = "status-processing";
+    kanji = pulsing ? "情報" : "情報";
+    latin = "PROCESSING";
+  } else if (majorityDecision) {
+    const d = String(majorityDecision).toUpperCase();
+    if (d === "NO" || d === "REJECTED") {
+      statusClass = "status-rejected";
+      kanji = "拒絶";
+      latin = "REJECTED";
+    } else if (d === "ABSTAIN" || d === "UNDECIDED") {
+      statusClass = "status-undecided";
+      kanji = "棄権";
+      latin = "UNDECIDED";
     } else {
-      statusLabel = "容認";
-      statusColor = "#5cf992";
+      statusClass = "status-approved";
+      kanji = "容認";
+      latin = "APPROVED";
     }
-  } else if (phase === "processing") {
-    statusLabel = "情報";
   }
 
   return (
-    <div
-      className={`magi-status-box ${isBlinking ? "processing-flash" : ""}`}
-      style={{ borderColor: statusColor }}
-    >
-      <div
-        className="magi-status-box-inner"
-        style={{ borderColor: statusColor, color: statusColor }}
-      >
-        <span className="magi-status-box-text">{statusLabel}</span>
-      </div>
+    <div className={`magi-status-badge ${statusClass}`}>
+      <div className="status-dot" />
+      <div className="status-latin">{latin}</div>
+      <div className="status-kanji">{kanji}</div>
     </div>
   );
 }
 
 export default function MagiBrainLayout({ brainStates, votes, majorityDecision, phase }) {
   const frameRef = useRef(null);
-  const topRef = useRef(null);
-  const leftRef = useRef(null);
+  const topRef   = useRef(null);
+  const leftRef  = useRef(null);
   const rightRef = useRef(null);
   const [trianglePoints, setTrianglePoints] = useState([]);
 
   useLayoutEffect(() => {
     const frame = frameRef.current;
-    const topPanel = topRef.current;
-    const leftPanel = leftRef.current;
-    const rightPanel = rightRef.current;
+    const top   = topRef.current;
+    const left  = leftRef.current;
+    const right = rightRef.current;
+    if (!frame || !top || !left || !right) return;
 
-    if (!frame || !topPanel || !leftPanel || !rightPanel) {
-      return undefined;
+    function recalc() {
+      const fr = frame.getBoundingClientRect();
+      const tr = top.getBoundingClientRect();
+      const lr = left.getBoundingClientRect();
+      const rr = right.getBoundingClientRect();
+
+      const cx = fr.width / 2;
+      const topY  = tr.bottom - fr.top;
+      const leftY = lr.top - fr.top + lr.height / 2;
+      const rightY = rr.top - fr.top + rr.height / 2;
+      const gapW = Math.max((rr.left - fr.left) - (lr.right - fr.left), 0);
+      const tw = gapW * 1.5;
+      const th = tw * 1.2;
+      const midY = (leftY + rightY) / 2;
+
+      setTrianglePoints([
+        { x: cx,          y: topY - 260 },
+        { x: cx - tw / 2, y: Math.min(midY, topY - 260 + th) + 30 },
+        { x: cx + tw / 2, y: Math.min(midY, topY - 260 + th) + 30 },
+      ]);
     }
 
-    function recalculateTriangle() {
-      const frameRect = frame.getBoundingClientRect();
-      const topRect = topPanel.getBoundingClientRect();
-      const leftRect = leftPanel.getBoundingClientRect();
-      const rightRect = rightPanel.getBoundingClientRect();
-
-      const frameCenterX = frameRect.width / 2;
-      const topBottomY = topRect.bottom - frameRect.top;
-      const leftCenterY = leftRect.top - frameRect.top + leftRect.height / 2;
-      const rightCenterY = rightRect.top - frameRect.top + rightRect.height / 2;
-      const leftInnerEdgeX = leftRect.right - frameRect.left;
-      const rightInnerEdgeX = rightRect.left - frameRect.left;
-
-      const lowerBrainMidpointY = (leftCenterY + rightCenterY) / 2;
-      const gapWidth = Math.max(rightInnerEdgeX - leftInnerEdgeX, 0);
-      const triangleWidth = gapWidth * 1.5;
-      const triangleHeight = triangleWidth * 1.25;
-
-      const topVertex = {
-        x: frameCenterX,
-        y: topBottomY - 300,
-      };
-
-      const leftVertex = {
-        x: frameCenterX - triangleWidth / 2,
-        y: Math.min(lowerBrainMidpointY, topVertex.y + triangleHeight) + 40,
-      };
-
-      const rightVertex = {
-        x: frameCenterX + triangleWidth / 2,
-        y: Math.min(lowerBrainMidpointY, topVertex.y + triangleHeight) + 40,
-      };
-
-      setTrianglePoints([topVertex, leftVertex, rightVertex]);
-    }
-
-    const observer = new ResizeObserver(recalculateTriangle);
-    observer.observe(frame);
-    observer.observe(topPanel);
-    observer.observe(leftPanel);
-    observer.observe(rightPanel);
-    window.addEventListener("resize", recalculateTriangle);
-    recalculateTriangle();
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", recalculateTriangle);
-    };
+    const obs = new ResizeObserver(recalc);
+    [frame, top, left, right].forEach((el) => obs.observe(el));
+    window.addEventListener("resize", recalc);
+    recalc();
+    return () => { obs.disconnect(); window.removeEventListener("resize", recalc); };
   }, []);
 
   return (
     <section className="magi-frame" ref={frameRef}>
-      <div className="magi-header-row">
-        <div className="magi-banner">
-          <div className="banner-decor-box"></div>
-          <div className="banner-decor-box"></div>
-          <span>質問</span>
-          <div className="banner-decor-box"></div>
-          <div className="banner-decor-box"></div>
-        </div>
-        <div className="magi-banner magi-banner-right">
-          <div className="banner-decor-box"></div>
-          <div className="banner-decor-box"></div>
-          <span>解決</span>
-          <div className="banner-decor-box"></div>
-          <div className="banner-decor-box"></div>
-        </div>
+      {/* Header bar */}
+      <div className="magi-header-bar">
+        <div className="magi-wordmark">MAGI SYSTEM</div>
+        <div className="magi-build-tag">BUILD 3.0 · CMD-CTR</div>
       </div>
 
+      {/* Left metadata */}
       <aside className="system-dossier">
-        <p>CODE:473</p>
-        <p>FILE: MAGI.SYS</p>
-        <p>EXTENSION: 3023</p>
-        <p>EX_MODE: {phase === "processing" ? "RUN" : "OFF"}</p>
-        <p>PRIORITY: AAA</p>
+        <p className="dossier-id">CODE:473</p>
+        <p><span className="dossier-key">FILE</span><span className="dossier-val">MAGI.SYS</span></p>
+        <p><span className="dossier-key">EXT</span><span className="dossier-val">3023</span></p>
+        <p><span className="dossier-key">MODE</span><span className="dossier-val">{phase === "processing" ? "RUN" : "OFF"}</span></p>
+        <p><span className="dossier-key">PRI</span><span className="dossier-val">AAA</span></p>
       </aside>
 
-      <StatusBox phase={phase} majorityDecision={majorityDecision} />
+      {/* Right status badge */}
+      <StatusBadge phase={phase} majorityDecision={majorityDecision} />
 
+      {/* Brain panels */}
       {PANELS.map((panel) => (
         <BrainPanel
           key={panel.brain}
           panelRef={
-            panel.position === "top"
-              ? topRef
-              : panel.position === "left"
-                ? leftRef
-                : rightRef
+            panel.position === "top"   ? topRef  :
+            panel.position === "left"  ? leftRef :
+            rightRef
           }
           name={panel.brain}
-          label={panel.label}
+          meta={BRAIN_META[panel.brain]}
           position={panel.position}
           state={brainStates[panel.brain]}
           vote={votes?.[panel.brain]?.selected_action}
         />
       ))}
 
+      {/* Triangle connector */}
       <div className="magi-connector-overlay" aria-hidden="true">
         <svg className="magi-connector-svg">
-          {trianglePoints.length === 3 ? (
+          {trianglePoints.length === 3 && (
             <polygon
               className="magi-triangle"
-              points={trianglePoints.map((point) => `${point.x},${point.y}`).join(" ")}
+              points={trianglePoints.map((p) => `${p.x},${p.y}`).join(" ")}
             />
-          ) : null}
+          )}
         </svg>
       </div>
 
+      {/* Center hub */}
       <div className="magi-hub">
         <span className="magi-hub-label">MAGI</span>
+        <span className="magi-hub-sub">DELIBERATION ENGINE</span>
       </div>
     </section>
   );
 }
 
-function BrainPanel({ name, label, panelRef, position, state, vote }) {
-  const [isBlinking, setIsBlinking] = useState(false);
-
-  useEffect(() => {
-    if (state !== "processing") {
-      setIsBlinking(false);
-      return undefined;
-    }
-
-    let waitTimer = 0;
-    let flashTimer = 0;
-    let cancelled = false;
-
-    const randomBetween = (min, max) =>
-      Math.floor(Math.random() * (max - min + 1)) + min;
-
-    const scheduleBlink = () => {
-      waitTimer = window.setTimeout(() => {
-        if (cancelled) {
-          return;
-        }
-
-        setIsBlinking(true);
-
-        flashTimer = window.setTimeout(() => {
-          if (cancelled) {
-            return;
-          }
-
-          setIsBlinking(false);
-          scheduleBlink();
-        }, randomBetween(50, 120));
-      }, randomBetween(80, 300));
-    };
-
-    scheduleBlink();
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(waitTimer);
-      window.clearTimeout(flashTimer);
-    };
-  }, [state]);
-
-  const getShapePoints = (pos) => {
-    if (pos === "top") return "0,0 100,0 100,68 80,100 20,100 0,68";
-    if (pos === "left") return "0,0 64,0 100,38 100,100 0,100";
-    if (pos === "right") return "36,0 100,0 100,100 0,100 0,38";
-    return "";
-  };
+function BrainPanel({ name, meta, panelRef, position, state, vote }) {
+  const stateLabel = getStateLabel(state);
 
   return (
     <article
-      className={`brain-panel brain-${position} state-${state}${isBlinking ? " processing-flash" : ""}`}
+      className={`brain-panel brain-${position} state-${state}`}
       ref={panelRef}
     >
-      <svg className="brain-shape-svg" preserveAspectRatio="none" viewBox="0 0 100 100">
-        <polygon className="brain-shape-poly" points={getShapePoints(position)} />
-      </svg>
-      <div className="brain-gridlines" />
-      <div className="brain-content">
-        <h2>{label}</h2>
-        <p className="brain-vote">{getPanelStateText(state, vote)}</p>
+      <div className="brain-panel-inner">
+        <div className="brain-header">
+          <h2 className="brain-name">{name}</h2>
+          <div className="brain-role">{meta.role}</div>
+          <div className="brain-serial">{meta.serial}</div>
+        </div>
+
+        <div className="brain-footer">
+          <div className="brain-state-label">
+            <span className="brain-state-dot" />
+            {stateLabel}
+          </div>
+          {vote && state !== "idle" && state !== "processing" && (
+            <div className="brain-vote-chip">{vote}</div>
+          )}
+        </div>
       </div>
     </article>
   );

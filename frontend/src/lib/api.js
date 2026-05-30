@@ -163,3 +163,33 @@ export async function mediaPrevious() {
 export function createEventsSocket() {
   return new WebSocket(WS_BASE);
 }
+
+// ---------------------------------------------------------------------------
+// Memory API
+// ---------------------------------------------------------------------------
+
+export async function fetchHistory(sessionId = "default-session", limit = 100) {
+  return readJson(
+    await fetch(`${API_BASE}/memory/history?session_id=${encodeURIComponent(sessionId)}&limit=${limit}`)
+  );
+}
+
+export async function clearHistory(sessionId = "default-session") {
+  return readJson(
+    await fetch(`${API_BASE}/memory/history?session_id=${encodeURIComponent(sessionId)}`, {
+      method: "DELETE",
+    })
+  );
+}
+
+export async function fetchFacts() {
+  return readJson(await fetch(`${API_BASE}/memory/facts`));
+}
+
+export async function saveFact(key, value) {
+  return readJson(
+    await fetch(`${API_BASE}/memory/facts?key=${encodeURIComponent(key)}&value=${encodeURIComponent(value)}`, {
+      method: "POST",
+    })
+  );
+}

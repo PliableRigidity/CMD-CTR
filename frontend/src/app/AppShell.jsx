@@ -48,6 +48,7 @@ export default function AppShell(props) {
             draft={props.draft}
             onDraftChange={props.setDraft}
             onSubmit={props.submitQuery}
+            onClear={props.clearChat}
           />
         </main>
 

@@ -9,6 +9,7 @@ from backend.app.services.system_control_service import SystemControlService
 from backend.app.services.voice_service import VoiceService
 from backend.app.services.web_service import WebIntelligenceService
 from backend.app.services.world_events_service import WorldEventsService
+from backend.memory.memory_service import MemoryService
 
 
 class AssistantPlatformRouter:
@@ -20,11 +21,13 @@ class AssistantPlatformRouter:
         self.system_control_service = SystemControlService()
         self.maps_service = MapsService()
         self.voice_service = VoiceService()
+        self.memory_service = MemoryService()
         self.conversation_service = ConversationService(
             web_service=self.web_service,
             action_service=self.action_service,
             system_control_service=self.system_control_service,
             maps_service=self.maps_service,
+            memory_service=self.memory_service,
         )
         self.decision_service = DecisionService()
         self.device_manager = DeviceManager()
@@ -33,7 +36,12 @@ class AssistantPlatformRouter:
     async def handle(self, request: AssistantRequest) -> AssistantResponse:
         mode = self._resolve_mode(request)
         if mode == "decision":
-            return await self.decision_service.handle(request)
+            response = await self.decision_service.handle(request)
+            # Persist decision exchanges too
+            self.memory_service.save_turn(
+                request.session_id, request.query, response.answer, "decision"
+            )
+            return response
         return await self.conversation_service.handle(request)
 
     def _resolve_mode(self, request: AssistantRequest) -> str:
@@ -54,16 +62,7 @@ class AssistantPlatformRouter:
             )
             return "conversation"
 
-        decision_keywords = (
-            "should",
-            "decide",
-            "compare",
-            "best",
-            "tradeoff",
-            "pros",
-            "cons",
-            "evaluate",
-        )
+        decision_keywords = ("should", "decide", "compare", "best", "tradeoff", "pros", "cons", "evaluate")
         if any(keyword in lowered for keyword in decision_keywords):
             self.mode_selection = ModeSelection(
                 active_mode="decision",
