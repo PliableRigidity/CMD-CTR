@@ -18,9 +18,12 @@ from backend.app.web.schemas.models import (
 )
 from backend.app.web.search.providers import (
     BingRssSearchProvider,
+    DuckDuckGoSearchProvider,
     GoogleNewsRssSearchProvider,
     SearchProvider,
+    SearxNGSearchProvider,
 )
+from backend.config import SEARXNG_URL
 
 
 class WebIntelligenceService:
@@ -29,7 +32,9 @@ class WebIntelligenceService:
         search_provider: SearchProvider | None = None,
         browser_provider: BrowserAutomationProvider | None = None,
     ) -> None:
-        self.default_search_provider = search_provider or BingRssSearchProvider()
+        self.default_search_provider = search_provider or (
+            SearxNGSearchProvider(SEARXNG_URL) if SEARXNG_URL else DuckDuckGoSearchProvider()
+        )
         self.news_search_provider = GoogleNewsRssSearchProvider()
         self.article_extractor = ArticleExtractor()
         self.event_extractor = EventExtractor()

@@ -11,7 +11,7 @@ router = APIRouter(tags=["world"])
 
 @router.get("/world/events", response_model=list[WorldEvent])
 async def list_world_events(
-    live: bool = Query(default=False),
+    live: bool = Query(default=True),
     category: str | None = Query(default=None),
     country: str | None = Query(default=None),
     platform_router: AssistantPlatformRouter = Depends(get_router),

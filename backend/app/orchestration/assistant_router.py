@@ -6,6 +6,7 @@ from backend.app.services.device_manager import DeviceManager
 from backend.app.services.event_service import EventService
 from backend.app.services.maps_service import MapsService
 from backend.app.services.system_control_service import SystemControlService
+from backend.app.services.mission_service import MissionService
 from backend.app.services.voice_service import VoiceService
 from backend.app.services.web_service import WebIntelligenceService
 from backend.app.services.world_events_service import WorldEventsService
@@ -32,6 +33,7 @@ class AssistantPlatformRouter:
         self.decision_service = DecisionService()
         self.device_manager = DeviceManager()
         self.world_events_service = WorldEventsService()
+        self.mission_service = MissionService()
 
     async def handle(self, request: AssistantRequest) -> AssistantResponse:
         mode = self._resolve_mode(request)

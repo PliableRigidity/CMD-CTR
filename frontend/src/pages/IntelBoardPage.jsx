@@ -193,7 +193,7 @@ export default function IntelBoardPage() {
       <header className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2 bg-slate-950/90 backdrop-blur border-b border-cyan-500/20">
         <div className="flex items-center gap-4">
           <Link to="/" className="text-xs text-cyan-500 hover:text-cyan-300 border border-cyan-500/30 rounded px-2 py-1 hover:bg-cyan-500/10 transition-colors">
-            ← CMD-CTR
+            ← SILVIA
           </Link>
           <div>
             <p className="text-[10px] text-slate-500 uppercase tracking-widest">Global Intelligence Board</p>

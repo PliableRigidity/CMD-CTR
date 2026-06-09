@@ -48,13 +48,14 @@ export default function TopBar({ mode, modeReason, voice, devices, onModeChange,
       </div>
 
       <div className="topbar__identity">
-        <p className="eyebrow">Operating Layer / Command Surface</p>
-        <h1>Aegis Command Center</h1>
+        <p className="eyebrow">AI Operating System / Local-First</p>
+        <h1>SILVIA</h1>
         <p className="topbar__subtext">
-          Mission control for conversation, decisions, actions, devices, and live intelligence.
+          Strategic Intelligence, Logistics, Voice &amp; Integrated Assistant
         </p>
         <div className="topbar__microcopy">
-          <span>CORE NODE / LOCAL-FIRST</span>
+          <span>CORE NODE / OLLAMA</span>
+          <span>MAGI ENGINE / STANDBY</span>
           <span>MISSION BUS / ACTIVE</span>
         </div>
       </div>
@@ -85,9 +86,20 @@ export default function TopBar({ mode, modeReason, voice, devices, onModeChange,
       </div>
 
       <div className="topbar__actions">
-        <button type="button" className="panel-button panel-button--accent" onClick={onOpenIntel}>
-          Open Intel Board
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" className="panel-button panel-button--accent" onClick={onOpenIntel}>
+            Intel Board
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={() => window.open("/voice", "_blank", "noopener,noreferrer")}
+            title={`Voice: STT ${voice?.stt_available ? "ready" : "unavailable"} · TTS ${voice?.tts_available ? "ready" : "unavailable"}`}
+            style={{ borderColor: voice?.stt_available && voice?.tts_available ? "rgba(198,242,238,0.25)" : "rgba(228,111,118,0.3)" }}
+          >
+            Voice {voice?.stt_available && voice?.tts_available ? "●" : "○"}
+          </button>
+        </div>
         <p className="mode-reason">Mode Logic: {modeReason}</p>
       </div>
     </header>

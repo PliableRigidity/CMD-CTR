@@ -1,35 +1,57 @@
-export default function MissionPanel({ mode, route, onOpenIntel }) {
+import { useEffect, useState } from "react";
+import { fetchMissions } from "../../lib/api";
+
+const STATUS_CLASS = { active: "active", monitoring: "monitoring", paused: "paused" };
+const STATUS_LABEL = { active: "Active", monitoring: "Monitor", paused: "Paused" };
+
+export default function MissionPanel({ mode, onOpenIntel }) {
+  const [missions, setMissions] = useState([]);
+  const [expanded, setExpanded] = useState(null);
+
+  useEffect(() => {
+    fetchMissions()
+      .then(setMissions)
+      .catch(() => {});
+  }, []);
+
   return (
     <section className="panel mission-panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Mission Context / Ops Layer</p>
-          <h2>Operational Focus</h2>
+          <p className="eyebrow">Mission Layer / Ops Context</p>
+          <h2>Active Missions</h2>
         </div>
-        <span className={`state-pill state-pill--${mode === "decision" ? "busy" : "idle"}`}>
-          {mode === "decision" ? "Council Online" : "Direct Assist Online"}
+        <span
+          className={`state-pill state-pill--${mode === "decision" ? "busy" : "idle"}`}
+          style={{ fontSize: "0.6rem", padding: "2px 8px" }}
+        >
+          {mode === "decision" ? "Council" : "Direct"}
         </span>
       </div>
 
-      <div className="mission-grid">
-        <article className="mission-card">
-          <span className="module-id">CTX-01</span>
-          <strong>Current Route</strong>
-          <p>{route.destination ? `${route.origin} -> ${route.destination}` : "No active route"}</p>
-          <p className="muted">
-            {route.distance ? `${route.distance} | ${route.eta}` : "Request a route from the navigation panel."}
-          </p>
-        </article>
-
-        <article className="mission-card">
-          <span className="module-id">INT-02</span>
-          <strong>Intel Board</strong>
-          <p>Open the full world intelligence screen on a second monitor.</p>
-          <button type="button" className="panel-button" onClick={onOpenIntel}>
-            Open Intel Board
-          </button>
-        </article>
+      <div className="mission-strip">
+        {missions.map((m) => (
+          <div key={m.id}>
+            <button
+              type="button"
+              className="mission-row"
+              onClick={() => setExpanded(expanded === m.id ? null : m.id)}
+            >
+              <span className={`mission-dot mission-dot--${STATUS_CLASS[m.status] ?? "active"}`} />
+              <span className="mission-code">{m.code}</span>
+              <span className="mission-name">{m.name}</span>
+              <span className="mission-status">{STATUS_LABEL[m.status] ?? m.status}</span>
+            </button>
+            {expanded === m.id && (
+              <p className="mission-desc">{m.description}</p>
+            )}
+          </div>
+        ))}
       </div>
+
+      <button type="button" className="panel-button intel-link-btn" onClick={onOpenIntel}>
+        Intel Board →
+      </button>
     </section>
   );
 }

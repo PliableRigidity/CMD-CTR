@@ -172,6 +172,40 @@ class BingRssSearchProvider(SearchProvider):
         return min(score, 1.0)
 
 
+class SearxNGSearchProvider(SearchProvider):
+    def __init__(self, base_url: str = "http://localhost:8888") -> None:
+        self.base_url = base_url.rstrip("/")
+
+    async def search(self, request: SearchRequest) -> list[SearchResult]:
+        params: dict = {"q": request.query, "format": "json", "language": "en"}
+        if request.category == "news":
+            params["categories"] = "news"
+        async with httpx.AsyncClient(
+            timeout=10.0,
+            headers={"User-Agent": "AssistantCommandCenter/1.0"},
+            follow_redirects=True,
+        ) as client:
+            response = await client.get(f"{self.base_url}/search", params=params)
+            response.raise_for_status()
+        data = response.json()
+        results: list[SearchResult] = []
+        for index, item in enumerate(data.get("results", [])[:request.limit], start=1):
+            url = item.get("url", "")
+            results.append(
+                SearchResult(
+                    rank=index,
+                    title=item.get("title", "").strip(),
+                    url=url.strip(),
+                    source=urlparse(url).netloc or "searxng",
+                    snippet=item.get("content", "").strip(),
+                    published_at=item.get("publishedDate"),
+                    category=request.category,
+                    score=max(0.0, 1.0 - ((index - 1) * 0.08)),
+                )
+            )
+        return results
+
+
 class GoogleNewsRssSearchProvider(SearchProvider):
     def __init__(self) -> None:
         self.base_url = "https://news.google.com/rss/search"

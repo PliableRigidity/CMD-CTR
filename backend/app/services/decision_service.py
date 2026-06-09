@@ -2,6 +2,7 @@ import asyncio
 import time
 
 from backend.app.models.assistant import AgentStatus, AssistantRequest, AssistantResponse, CommandLogEntry
+from backend.config import DECISION_TIMEOUT_SECONDS
 from backend.modes.decision.orchestrator import run_pipeline
 from backend.modes.decision.schemas import RawUserInput
 
@@ -19,7 +20,7 @@ class DecisionService:
                         constraints=request.constraints or [],
                     ),
                 ),
-                timeout=12,
+                timeout=DECISION_TIMEOUT_SECONDS,
             )
             elapsed = (time.perf_counter() - started) * 1000
             agents = []
@@ -65,6 +66,34 @@ class DecisionService:
                     "final_votes": {key: value.model_dump() for key, value in result.final_votes.items()},
                     "chair_summary": result.chair_summary.model_dump(),
                 },
+            )
+        except asyncio.TimeoutError:
+            elapsed = (time.perf_counter() - started) * 1000
+            return AssistantResponse(
+                mode="decision",
+                title="Decision Mode",
+                answer="Decision Mode is taking longer than the current safety limit and was stopped before completion.",
+                reasoning=(
+                    f"The MAGI pipeline exceeded the configured timeout of {DECISION_TIMEOUT_SECONDS} seconds."
+                ),
+                processing_time_ms=elapsed,
+                agents=[
+                    AgentStatus(
+                        name="Decision Engine",
+                        role="magi_subsystem",
+                        state="timeout",
+                        summary="The preserved MAGI workflow timed out before completion.",
+                    )
+                ],
+                logs=[
+                    CommandLogEntry(
+                        timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        title="Decision pipeline timed out",
+                        detail=f"Exceeded {DECISION_TIMEOUT_SECONDS}s timeout.",
+                        level="error",
+                    )
+                ],
+                payload={"error": "timeout", "timeout_seconds": DECISION_TIMEOUT_SECONDS},
             )
         except Exception as exc:
             elapsed = (time.perf_counter() - started) * 1000

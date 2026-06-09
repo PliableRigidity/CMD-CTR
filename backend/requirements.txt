@@ -17,15 +17,16 @@ beautifulsoup4>=4.12.0
 pycaw>=20251023
 comtypes>=1.4.0
 
-# Voice (Phase 2)
-# OpenAI Whisper for speech-to-text
-openai-whisper>=20240930
-# Text-to-speech options
-pyttsx3>=2.90
-# Audio processing
-librosa>=0.10.0
+# Voice — local providers
+faster-whisper>=1.0.0
 soundfile>=0.12.1
 numpy>=1.26.0
+# Silero VAD (same ONNX model used by llm-voice-assistant)
+onnxruntime>=1.15.0
+# Speaches API client (OpenAI-compatible, same SDK as llm-voice-assistant)
+openai>=1.0.0
+# Piper TTS is invoked via subprocess — install separately:
+# pip install piper-tts  OR  download binary from https://github.com/rhasspy/piper/releases
 
 # Logging & Monitoring
 python-json-logger>=2.0.7

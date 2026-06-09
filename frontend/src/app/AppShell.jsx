@@ -3,13 +3,12 @@ import DecisionEnginePanel from "../components/agents/DecisionEnginePanel";
 import ConversationPanel from "../components/chat/ConversationPanel";
 import MissionPanel from "../components/command/MissionPanel";
 import EventsStreamPanel from "../components/dashboard/EventsStreamPanel";
-import DevicesPanel from "../components/devices/DevicesPanel";
-import NavigationPanel from "../components/maps/NavigationPanel";
+import InfrastructurePanel from "../components/infrastructure/InfrastructurePanel";
+import WatchOfficerPanel from "../components/ops/WatchOfficerPanel";
 import TopBar from "../components/shell/TopBar";
-import VoiceStatusPill from "../components/voice/VoiceStatusPill";
 
 export default function AppShell(props) {
-  const latestAssistantMessage = [...props.messages].reverse().find((message) => message.role === "assistant");
+  const latestAssistantMessage = [...props.messages].reverse().find((m) => m.role === "assistant");
 
   return (
     <div className="command-center">
@@ -26,34 +25,41 @@ export default function AppShell(props) {
 
       <div className="command-grid">
         <aside className="rail rail--left">
-          <MissionPanel mode={props.mode} route={props.route} onOpenIntel={props.openIntelBoard} />
-          <NavigationPanel route={props.route} onRequestRoute={props.requestRoute} />
+          <MissionPanel mode={props.mode} onOpenIntel={props.openIntelBoard} />
+          <WatchOfficerPanel
+            alerts={props.watchAlerts}
+            onDismiss={props.dismissAlert}
+          />
         </aside>
 
         <main className="mission-core">
           <div className="mission-core__halo" />
-          <VoiceStatusPill
-            voice={props.voice}
-            pending={props.pending}
-            draft={props.draft}
-            onDraftChange={props.setDraft}
-            onError={props.setError}
-            onVoiceStateChange={props.setVoiceFlags}
-          />
           <ConversationPanel
             messages={props.messages}
             pending={props.pending}
             error={props.error}
             mode={props.mode}
             draft={props.draft}
+            voice={props.voice}
             onDraftChange={props.setDraft}
             onSubmit={props.submitQuery}
             onClear={props.clearChat}
+            onVoiceStateChange={props.setVoiceFlags}
+            onError={props.setError}
           />
+          {props.mode === "decision" && (
+            <DecisionEnginePanel mode={props.mode} message={latestAssistantMessage} />
+          )}
         </main>
 
         <aside className="rail rail--right">
-          <DevicesPanel devices={props.devices} audio={props.audio} />
+          <InfrastructurePanel
+            nodes={props.nodes}
+            onAddNode={props.addNode}
+            onSaveNode={props.saveNode}
+            onProbeNode={props.probeNodeById}
+            onDeleteNode={props.removeNode}
+          />
           <ActionShortcutsPanel
             actions={props.actions}
             audio={props.audio}
@@ -64,8 +70,6 @@ export default function AppShell(props) {
           <EventsStreamPanel logs={props.logs} />
         </aside>
       </div>
-
-      <DecisionEnginePanel mode={props.mode} message={latestAssistantMessage} />
     </div>
   );
 }

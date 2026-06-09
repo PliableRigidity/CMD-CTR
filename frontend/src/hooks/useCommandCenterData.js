@@ -3,6 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import {
   clearHistory,
   createEventsSocket,
+  createNode,
+  deleteNode,
+  dismissWatchAlert,
   executeActionAlias,
   fetchActions,
   fetchAudioState,
@@ -10,35 +13,25 @@ import {
   fetchHistory,
   fetchLogs,
   fetchMode,
-  fetchRoute,
+  fetchNodes,
   fetchVoiceStatus,
+  fetchWatchAlerts,
   mediaNext,
   mediaPlayPause,
   mediaPrevious,
   openAppAction,
+  probeNode,
   sendChat,
   sendDecision,
   setAudioVolume,
   setMode,
+  synthesizeSpeech,
   toggleMute,
+  updateNode,
   updateVoiceState,
   volumeDown,
   volumeUp,
 } from "../lib/api";
-
-const INITIAL_ROUTE = {
-  origin: "London",
-  destination: "Cambridge",
-  travel_mode: "drive",
-  distance: "",
-  eta: "",
-  provider: "",
-  notes: [],
-  origin_lat: null,
-  origin_lon: null,
-  destination_lat: null,
-  destination_lon: null,
-};
 
 export function useCommandCenterData() {
   const [mode, setModeState] = useState("conversation");
@@ -46,8 +39,9 @@ export function useCommandCenterData() {
   const [voice, setVoice] = useState(null);
   const [audio, setAudio] = useState(null);
   const [devices, setDevices] = useState([]);
+  const [nodes, setNodes] = useState([]);
+  const [watchAlerts, setWatchAlerts] = useState([]);
   const [actions, setActions] = useState([]);
-  const [route, setRouteState] = useState(INITIAL_ROUTE);
   const [draft, setDraft] = useState("");
   const [sessionId] = useState("default-session");
   const [messages, setMessages] = useState([]);
@@ -59,16 +53,17 @@ export function useCommandCenterData() {
   useEffect(() => {
     async function load() {
       try {
-        const [modeData, voiceData, deviceData, actionData, routeData, logData, audioData, historyData] =
+        const [modeData, voiceData, deviceData, actionData, logData, audioData, historyData, nodesData, watchData] =
           await Promise.all([
             fetchMode(),
             fetchVoiceStatus(),
             fetchDevices(),
             fetchActions(),
-            fetchRoute({ origin: INITIAL_ROUTE.origin, destination: INITIAL_ROUTE.destination, travel_mode: "drive" }),
             fetchLogs(),
             fetchAudioState(),
             fetchHistory(sessionId, 100),
+            fetchNodes(),
+            fetchWatchAlerts(),
           ]);
 
         setModeState(modeData.active_mode);
@@ -76,9 +71,10 @@ export function useCommandCenterData() {
         setVoice(voiceData);
         setDevices(deviceData);
         setActions(actionData);
-        setRouteState(routeData);
         setLogs(logData);
         setAudio(audioData);
+        setNodes(nodesData);
+        setWatchAlerts(watchData);
 
         // Restore conversation history, then add welcome if empty
         if (historyData.messages && historyData.messages.length > 0) {
@@ -87,7 +83,7 @@ export function useCommandCenterData() {
             role: msg.role,
             mode: msg.mode || "conversation",
             answer: msg.content,
-            title: msg.role === "assistant" ? "CMD-CTR" : undefined,
+            title: msg.role === "assistant" ? "SILVIA" : undefined,
             processing_time_ms: 0,
             sources: [],
             agents: [],
@@ -101,8 +97,8 @@ export function useCommandCenterData() {
             id: "welcome",
             role: "assistant",
             mode: "conversation",
-            title: "Command Center Online",
-            answer: "CMD-CTR is live. Conversation history is persisted across sessions. Ask me anything, or say 'open [app]' to launch something.",
+            title: "SILVIA Online",
+            answer: "SILVIA is live — AI Operating System initialised. Conversation history persisted across sessions.\n\nSay 'brief me' for a mission status, 'open [app]' to launch something, or ask anything.",
             processing_time_ms: 0,
             sources: [],
             agents: [],
@@ -139,33 +135,51 @@ export function useCommandCenterData() {
 
   useEffect(() => {
     if (!voice?.speech_enabled) {
-      window.speechSynthesis?.cancel();
       return;
     }
     const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
-    if (!latestAssistant?.answer || !window.speechSynthesis) {
+    const speechText = latestAssistant?.payload?.speech_text || latestAssistant?.answer;
+    if (!speechText) {
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(latestAssistant.answer);
-    utterance.onstart = async () => {
+    let cancelled = false;
+
+    async function speak() {
+      let ctx;
       try {
         setVoice((current) => (current ? { ...current, speaking: true } : current));
         await updateVoiceState({ speaking: true, speech_enabled: true });
-      } catch {
-        // no-op
+        const buffer = await synthesizeSpeech(speechText);
+        if (cancelled) return;
+        ctx = new AudioContext();
+        const decoded = await ctx.decodeAudioData(buffer);
+        const src = ctx.createBufferSource();
+        src.buffer = decoded;
+        src.connect(ctx.destination);
+        src.onended = async () => {
+          await ctx.close();
+          if (!cancelled) {
+            setVoice((current) => (current ? { ...current, speaking: false } : current));
+            await updateVoiceState({ speaking: false, speech_enabled: true });
+          }
+        };
+        src.start();
+      } catch (playbackError) {
+        if (ctx) await ctx.close().catch(() => {});
+        if (!cancelled) {
+          setError(playbackError.message || "Voice playback failed.");
+          setVoice((current) => (current ? { ...current, speaking: false } : current));
+          await updateVoiceState({ speaking: false, speech_enabled: true });
+        }
       }
+    }
+
+    speak();
+
+    return () => {
+      cancelled = true;
     };
-    utterance.onend = async () => {
-      try {
-        setVoice((current) => (current ? { ...current, speaking: false } : current));
-        await updateVoiceState({ speaking: false, speech_enabled: true });
-      } catch {
-        // no-op
-      }
-    };
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
   }, [messages, voice?.speech_enabled]);
 
   async function switchMode(nextMode) {
@@ -195,7 +209,7 @@ export function useCommandCenterData() {
       const response =
         mode === "decision"
           ? await sendDecision({ query: trimmed, mode: "decision", session_id: sessionId })
-          : await sendChat({ query: trimmed, mode: "conversation", session_id: sessionId, metadata: route.origin ? { origin: route.origin } : {} });
+          : await sendChat({ query: trimmed, mode: "conversation", session_id: sessionId });
       setMessages((current) => [
         ...current,
         {
@@ -211,17 +225,6 @@ export function useCommandCenterData() {
       return false;
     } finally {
       setPending(false);
-    }
-  }
-
-  async function requestRoute({ origin, destination, travel_mode }) {
-    try {
-      const nextRoute = await fetchRoute({ origin, destination, travel_mode });
-      setRouteState(nextRoute);
-      return nextRoute;
-    } catch (routeError) {
-      setError(routeError.message || "Failed to load route.");
-      throw routeError;
     }
   }
 
@@ -295,14 +298,67 @@ export function useCommandCenterData() {
     window.open(`${window.location.origin}/intel`, "_blank", "noopener,noreferrer");
   }
 
+  async function addNode(data) {
+    try {
+      const node = await createNode(data);
+      setNodes((current) => [...current.filter((existing) => existing.id !== node.id), node]);
+      return node;
+    } catch (nodeError) {
+      setError(nodeError.message || "Failed to add node.");
+      throw nodeError;
+    }
+  }
+
+  async function removeNode(nodeId) {
+    try {
+      await deleteNode(nodeId);
+      setNodes((current) => current.filter((n) => n.id !== nodeId));
+    } catch (nodeError) {
+      setError(nodeError.message || "Failed to remove node.");
+      throw nodeError;
+    }
+  }
+
+  async function saveNode(nodeId, data) {
+    try {
+      const next = await updateNode(nodeId, data);
+      setNodes((current) => current.map((node) => (node.id === nodeId ? next : node)));
+      return next;
+    } catch (nodeError) {
+      setError(nodeError.message || "Failed to update node.");
+      throw nodeError;
+    }
+  }
+
+  async function probeNodeById(nodeId) {
+    try {
+      const next = await probeNode(nodeId);
+      setNodes((current) => current.map((node) => (node.id === nodeId ? next : node)));
+      return next;
+    } catch (nodeError) {
+      setError(nodeError.message || "Failed to probe node.");
+      throw nodeError;
+    }
+  }
+
+  async function dismissAlert(alertId) {
+    try {
+      await dismissWatchAlert(alertId);
+      setWatchAlerts((current) => current.filter((a) => a.id !== alertId));
+    } catch (alertError) {
+      setError(alertError.message || "Failed to dismiss alert.");
+    }
+  }
+
   return {
     mode,
     modeReason,
     voice,
     audio,
     devices,
+    nodes,
+    watchAlerts,
     actions,
-    route,
     draft,
     messages,
     logs,
@@ -313,12 +369,16 @@ export function useCommandCenterData() {
     setDraft,
     switchMode,
     submitQuery,
-    requestRoute,
     runAction,
     runAliasAction,
     applyAudio,
     setVoiceFlags,
     clearChat,
     openIntelBoard,
+    addNode,
+    saveNode,
+    probeNodeById,
+    removeNode,
+    dismissAlert,
   };
 }

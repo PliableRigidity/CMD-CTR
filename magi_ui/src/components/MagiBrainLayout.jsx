@@ -127,7 +127,7 @@ export default function MagiBrainLayout({ brainStates, votes, majorityDecision, 
       {/* Header bar */}
       <div className="magi-header-bar">
         <div className="magi-wordmark">MAGI SYSTEM</div>
-        <div className="magi-build-tag">BUILD 3.0 · CMD-CTR</div>
+        <div className="magi-build-tag">BUILD 4.0 · SILVIA</div>
       </div>
 
       {/* Left metadata */}
