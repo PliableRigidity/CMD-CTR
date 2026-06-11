@@ -9,6 +9,7 @@ from backend.app.services.system_control_service import SystemControlService
 from backend.app.services.mission_service import MissionService
 from backend.app.services.semantic_memory_service import SemanticMemoryService
 from backend.app.services.voice_service import VoiceService
+from backend.app.orchestration.execution_engine import ExecutionEngine
 from backend.app.services.web_service import WebIntelligenceService
 from backend.app.services.world_events_service import WorldEventsService
 from backend.memory.memory_service import MemoryService
@@ -34,6 +35,8 @@ class AssistantPlatformRouter:
             event_service=self.event_service,
             semantic_memory_service=self.semantic_memory_service,
         )
+        self.execution_engine = ExecutionEngine(conversation_service=self.conversation_service)
+        self.conversation_service.execution_engine = self.execution_engine
         self.decision_service = DecisionService()
         self.device_manager = DeviceManager()
         self.world_events_service = WorldEventsService()

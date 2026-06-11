@@ -68,6 +68,7 @@ class ConversationService:
         memory_service: MemoryService | None = None,
         event_service=None,
         semantic_memory_service=None,
+        execution_engine=None,
     ) -> None:
         self.model_name = CONVERSATION_MODEL
         self.web_service = web_service
@@ -77,8 +78,10 @@ class ConversationService:
         self.memory_service = memory_service
         self.event_service = event_service
         self.semantic_memory_service = semantic_memory_service
+        self.execution_engine = execution_engine
         self._pending_deletion: str | None = None
         self._pending_ssh: dict | None = None
+        self._pending_command: dict | None = None
 
     async def handle(self, request: AssistantRequest) -> AssistantResponse:
         started = time.perf_counter()
@@ -107,6 +110,15 @@ class ConversationService:
         if command_response is not None:
             _persist(command_response.answer)
             return _stamp(command_response)
+
+        # Multi-step execution via Hermes
+        if self.execution_engine is not None:
+            from backend.app.orchestration.execution_engine import is_multistep
+            if is_multistep(request.query):
+                exec_response = await self.execution_engine.run(request.query, request)
+                if exec_response is not None:
+                    _persist(exec_response.answer)
+                    return _stamp(exec_response)
 
         use_web = request.metadata.get("use_web") is True or self._needs_web(request.query)
         tool_decision = await plan(request.query, allow_web=use_web)
@@ -476,6 +488,47 @@ class ConversationService:
                     result,
                 )
 
+            if name == "list_nodes_by_type":
+                node_type = args.get("type", "").strip()
+                await self._emit_tool("[TOOL] list_nodes_by_type", f"Listing {node_type} nodes")
+                from backend.app.tools.node_tool import list_nodes_by_type
+                result = list_nodes_by_type(node_type)
+                await self._emit_tool("[TOOL] list_nodes_by_type", result["summary"])
+                return self._node_response(
+                    f"{node_type.capitalize()} Nodes",
+                    self._render_node_list_by_type(result),
+                    result,
+                )
+
+            if name == "send_node_command":
+                node_name = args.get("node", "").strip()
+                command = args.get("command", "").strip()
+                payload_args = args.get("payload") or {}
+                if not node_name or not command:
+                    return self._simple_response(
+                        "Command",
+                        "Which node and command? Try: 'arm drone-01' or 'send drone-01 home'.",
+                    )
+                _DESTRUCTIVE = {"arm", "disarm", "emergency_stop", "reboot"}
+                if command in _DESTRUCTIVE:
+                    self._pending_command = {"node": node_name, "command": command, "payload": payload_args}
+                    await self._emit_tool(
+                        "[TOOL] send_node_command",
+                        f"Confirmation required: {command} on {node_name}",
+                        "warning",
+                    )
+                    return self._simple_response(
+                        "Confirm Command",
+                        f"Send '{command}' to {node_name}? Reply 'yes' to confirm, or 'cancel' to abort.",
+                    )
+                await self._emit_tool("[TOOL] send_node_command", f"Sending: {command} → {node_name}")
+                from backend.app.tools.node_tool import send_node_command as _send_cmd
+                result = await _send_cmd(node_name, command, payload_args or None)
+                level = "info" if result["ok"] else "error"
+                await self._emit_tool("[TOOL] send_node_command", result["summary"], level)
+                answer = result["summary"] if result["ok"] else f"Command failed: {result.get('error', 'unknown error')}"
+                return self._node_response("Command Sent" if result["ok"] else "Command Failed", answer, result)
+
             if name == "update_node_ip":
                 node_name = args.get("node", "").strip()
                 ip = args.get("ip", "").strip()
@@ -671,6 +724,33 @@ class ConversationService:
                     else f"Could not open SSH: {result['error']}"
                 )
                 return self._node_response("SSH Session" if result["ok"] else "SSH Failed", answer, result)
+
+        # Pending node command confirmation
+        if self._pending_command:
+            pending = self._pending_command
+            if re.match(r"^(?:no|cancel|abort|stop|nevermind|nope)[\s\.!]*$", lowered):
+                self._pending_command = None
+                await self._emit_tool(
+                    "[TOOL] send_node_command",
+                    f"Cancelled — '{pending['command']}' on '{pending['node']}' aborted",
+                    "warning",
+                )
+                return self._simple_response(
+                    "Cancelled",
+                    f"Command '{pending['command']}' on '{pending['node']}' aborted.",
+                )
+            if re.match(r"^(?:yes|confirm|proceed|do\s+it|affirmative)[\s,\.!]*$", lowered):
+                self._pending_command = None
+                await self._emit_tool(
+                    "[TOOL] send_node_command",
+                    f"Confirmed: {pending['command']} → {pending['node']}",
+                )
+                from backend.app.tools.node_tool import send_node_command as _send_cmd
+                result = await _send_cmd(pending["node"], pending["command"], pending.get("payload"))
+                level = "info" if result["ok"] else "error"
+                await self._emit_tool("[TOOL] send_node_command", result["summary"], level)
+                answer = result["summary"] if result["ok"] else f"Command failed: {result.get('error', 'unknown error')}"
+                return self._node_response("Command Sent" if result["ok"] else "Command Failed", answer, result)
 
         if self.action_service is not None:
             open_match = re.match(r"^(open|launch|start)\s+(.+)$", raw, flags=re.I)
@@ -876,6 +956,27 @@ class ConversationService:
                 h = d["uptime"] // 3600
                 m = (d["uptime"] % 3600) // 60
                 lines.append(f"Uptime:      {h}h {m}m")
+            # Robotics fields
+            if d.get("battery_pct") is not None:
+                lines.append(f"Battery:     {d['battery_pct']:.0f}%")
+            if d.get("mission_state"):
+                lines.append(f"Mission:     {d['mission_state']}")
+            if d.get("altitude") is not None:
+                lines.append(f"Altitude:    {d['altitude']:.1f}m")
+            if d.get("heading") is not None:
+                lines.append(f"Heading:     {d['heading']:.0f}°")
+            if d.get("position_lat") is not None and d.get("position_lon") is not None:
+                lines.append(f"Position:    {d['position_lat']:.6f}, {d['position_lon']:.6f}")
+            if d.get("imu_data"):
+                imu = d["imu_data"]
+                accel_keys = ("accel_x", "accel_y", "accel_z")
+                gyro_keys = ("gyro_x", "gyro_y", "gyro_z")
+                if any(k in imu for k in accel_keys):
+                    ax, ay, az = (imu.get(k, 0) for k in accel_keys)
+                    lines.append(f"IMU Accel:   {ax:.2f}/{ay:.2f}/{az:.2f}")
+                if any(k in imu for k in gyro_keys):
+                    gx, gy, gz = (imu.get(k, 0) for k in gyro_keys)
+                    lines.append(f"IMU Gyro:    {gx:.2f}/{gy:.2f}/{gz:.2f}")
         else:
             lines.append("")
             lines.append("No telemetry received yet.")
@@ -922,6 +1023,29 @@ class ConversationService:
             except Exception:
                 pass
             lines.append(f"  [{cat}] {a['message']}{ts}  ({sev})")
+        return "\n".join(lines)
+
+    def _render_node_list_by_type(self, result: dict) -> str:
+        d = result["data"]
+        nodes = d.get("nodes", [])
+        node_type = d.get("type", "node")
+        if not nodes:
+            return f"No {node_type} nodes registered."
+        lines = [f"{node_type.capitalize()} nodes — {len(nodes)}\n"]
+        for n in nodes:
+            status = n["status"].upper()
+            metrics = []
+            if n.get("battery_pct") is not None:
+                metrics.append(f"Bat {n['battery_pct']:.0f}%")
+            if n.get("mission_state"):
+                metrics.append(n["mission_state"])
+            if n.get("cpu") is not None:
+                metrics.append(f"CPU {n['cpu']:.0f}%")
+            if n.get("ram") is not None:
+                metrics.append(f"RAM {n['ram']:.0f}%")
+            metric_str = "  " + " · ".join(metrics) if metrics else ""
+            agent_str = "  [agent]" if n.get("agent_url") else ""
+            lines.append(f"  {n['name']:<20} {status:<10}{metric_str}{agent_str}")
         return "\n".join(lines)
 
     def _personal_response(self, title: str, answer: str, result: dict) -> AssistantResponse:

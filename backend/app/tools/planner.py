@@ -64,7 +64,8 @@ TOOLS:
   Set node to the node name for a specific node. Set node="all" (or leave empty) for all nodes.
   Examples: "show workstation telemetry", "workstation cpu", "workstation ram", "pi5 telemetry",
             "show all node telemetry", "show hottest node", "node health", "infrastructure status",
-            "show nighthawk metrics", "workstation status", "show workstation health"
+            "show nighthawk metrics", "workstation status", "show workstation health",
+            "show drone-01 battery", "drone-01 mission state", "show robot telemetry"
   IMPORTANT: Always call this tool immediately — never say "I need to check the registry."
   If the data exists, display it. If it does not, explain exactly why (e.g. no agent configured).
 
@@ -172,6 +173,16 @@ TOOLS:
   Search past conversation history by meaning/topic.
   Use for: "what did I say about X", "find conversations about Y", "did we discuss Z", "previous discussions about W"
   Examples: "what did I say about DroneHive", "find conversations about the pi5", "did we discuss networking"
+
+- list_nodes_by_type: args {"type": string}
+  List all registered nodes of a specific type. type can be: drone, robot, esp32, sensor-network, workstation, server, etc.
+  Examples: "list drones", "show all robots", "what drones do I have", "list esp32 nodes", "show all sensor nodes"
+
+- send_node_command: args {"node": string, "command": string, "payload": dict}
+  Send a command to a node via its silvia-agent. Allowed commands: arm, disarm, land, home, emergency_stop, reboot, restart_service.
+  Destructive commands (arm, disarm, reboot, emergency_stop) will prompt for confirmation before executing.
+  payload is optional — use {} if not needed.
+  Examples: "arm drone-01", "disarm drone-01", "land drone-01", "send drone-01 home", "emergency stop drone-01", "reboot pi5"
 
 RULES:
 - Time + weather for same place → call_tools with both.
@@ -488,6 +499,37 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "delete event Robotics Meeting"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"delete_calendar_event","args":{"query":"Robotics Meeting"}}'},
 
+    # ── Robotics ──────────────────────────────────────────────────────────────
+    {"role": "user",      "content": "list drones"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_nodes_by_type","args":{"type":"drone"}}'},
+
+    {"role": "user",      "content": "show all robots"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_nodes_by_type","args":{"type":"robot"}}'},
+
+    {"role": "user",      "content": "what drones do I have"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_nodes_by_type","args":{"type":"drone"}}'},
+
+    {"role": "user",      "content": "list esp32 nodes"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_nodes_by_type","args":{"type":"esp32"}}'},
+
+    {"role": "user",      "content": "arm drone-01"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"send_node_command","args":{"node":"drone-01","command":"arm","payload":{}}}'},
+
+    {"role": "user",      "content": "disarm drone-01"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"send_node_command","args":{"node":"drone-01","command":"disarm","payload":{}}}'},
+
+    {"role": "user",      "content": "land drone-01"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"send_node_command","args":{"node":"drone-01","command":"land","payload":{}}}'},
+
+    {"role": "user",      "content": "send drone-01 home"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"send_node_command","args":{"node":"drone-01","command":"home","payload":{}}}'},
+
+    {"role": "user",      "content": "emergency stop drone-01"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"send_node_command","args":{"node":"drone-01","command":"emergency_stop","payload":{}}}'},
+
+    {"role": "user",      "content": "reboot pi5"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"send_node_command","args":{"node":"pi5","command":"reboot","payload":{}}}'},
+
     # ── Semantic memory ────────────────────────────────────────────────────────
     {"role": "user",      "content": "what did I say about DroneHive"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"semantic_search","args":{"query":"DroneHive"}}'},
@@ -710,6 +752,20 @@ _SEMANTIC_SEARCH_RE = re.compile(
 )
 
 
+# ── Robotics regexes ─────────────────────────────────────────────────────────
+
+_ROBOTICS_TYPE_RE = re.compile(
+    r"^(?:list|show|get|what)\s+(?:all\s+)?(?:my\s+)?(drone|robot|esp32|sensor[\s\-]?network)s?[\?\.!]?$",
+    re.I,
+)
+_CMD_ARM_RE    = re.compile(rf"^arm\s+{_N}[\?\.!]?$", re.I)
+_CMD_DISARM_RE = re.compile(rf"^disarm\s+{_N}[\?\.!]?$", re.I)
+_CMD_LAND_RE   = re.compile(rf"^land\s+{_N}[\?\.!]?$", re.I)
+_CMD_HOME_RE   = re.compile(rf"^(?:send|return)\s+{_N}\s+(?:home|to\s+(?:home|base))[\?\.!]?$", re.I)
+_CMD_ESTOP_RE  = re.compile(rf"^(?:emergency\s+stop|e[\-\.]?stop|estop)\s+{_N}[\?\.!]?$", re.I)
+_CMD_REBOOT_RE = re.compile(rf"^reboot\s+{_N}[\?\.!]?$", re.I)
+
+
 def _regex_system(query: str) -> dict | None:
     text = query.strip()
 
@@ -836,6 +892,36 @@ def _regex_fallback(query: str) -> dict:
         q = next((g for g in m.groups() if g), "").strip()
         if q:
             return {"action": "call_tool", "name": "semantic_search", "args": {"query": q}}
+
+    # ── Robotics ─────────────────────────────────────────────────────────────
+    m = _ROBOTICS_TYPE_RE.match(text)
+    if m:
+        rtype = m.group(1).lower().replace(" ", "-").replace("sensor-network", "sensor-network")
+        return {"action": "call_tool", "name": "list_nodes_by_type", "args": {"type": rtype}}
+
+    m = _CMD_ARM_RE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "send_node_command", "args": {"node": m.group(1), "command": "arm", "payload": {}}}
+
+    m = _CMD_DISARM_RE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "send_node_command", "args": {"node": m.group(1), "command": "disarm", "payload": {}}}
+
+    m = _CMD_LAND_RE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "send_node_command", "args": {"node": m.group(1), "command": "land", "payload": {}}}
+
+    m = _CMD_HOME_RE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "send_node_command", "args": {"node": m.group(1), "command": "home", "payload": {}}}
+
+    m = _CMD_ESTOP_RE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "send_node_command", "args": {"node": m.group(1), "command": "emergency_stop", "payload": {}}}
+
+    m = _CMD_REBOOT_RE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "send_node_command", "args": {"node": m.group(1), "command": "reboot", "payload": {}}}
 
     # ── Personal ops ─────────────────────────────────────────────────────────
     m = _REMIND_SET.match(query)

@@ -58,6 +58,14 @@ class NodeMetricsUpdate(BaseModel):
     last_verified: Optional[str] = None
     verification_source: Optional[str] = None
     latency_ms: Optional[float] = None
+    # Robotics / edge telemetry
+    battery_pct: Optional[float] = None
+    position_lat: Optional[float] = None
+    position_lon: Optional[float] = None
+    altitude: Optional[float] = None
+    heading: Optional[float] = None
+    mission_state: Optional[str] = None
+    imu_data: Optional[dict] = None
 
 
 class Node(BaseModel):
@@ -87,3 +95,11 @@ class Node(BaseModel):
     probe_error: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     notes: Optional[str] = None
+    # Robotics / edge telemetry
+    battery_pct: Optional[float] = None
+    position_lat: Optional[float] = None
+    position_lon: Optional[float] = None
+    altitude: Optional[float] = None
+    heading: Optional[float] = None
+    mission_state: Optional[str] = None
+    imu_data: Optional[dict] = None

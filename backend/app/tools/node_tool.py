@@ -329,6 +329,14 @@ def _node_metrics_dict(node) -> dict:
         "last_probe_at": node.last_probe_at,
         "agent_url": node.agent_url,
         "source": "silvia-agent" if node.agent_url else "node-probe",
+        # Robotics fields
+        "battery_pct": node.battery_pct,
+        "position_lat": node.position_lat,
+        "position_lon": node.position_lon,
+        "altitude": node.altitude,
+        "heading": node.heading,
+        "mission_state": node.mission_state,
+        "imu_data": node.imu_data,
     }
 
 
@@ -568,3 +576,105 @@ def delete_node_by_name(name: str) -> dict:
         {"deleted_at": deleted_at} if ok else None,
         None if ok else "Delete failed.",
     )
+
+
+# ── Robotics tools ────────────────────────────────────────────────────────────
+
+_ROBOTICS_TYPES = {"drone", "robot", "esp32", "sensor-network"}
+
+_SAFE_COMMANDS = {
+    "reboot", "restart_service", "emergency_stop",
+    "arm", "disarm", "land", "home",
+}
+_DESTRUCTIVE_COMMANDS = {"arm", "disarm", "emergency_stop", "reboot", "land"}
+
+
+def list_nodes_by_type(node_type: str) -> dict:
+    """List nodes of a specific type (drone, robot, esp32, sensor-network, etc.)."""
+    from backend.app.services.node_service import NodeService
+    ns = NodeService()
+    nodes = ns.list_nodes_by_type(node_type)
+    if not nodes:
+        return _make_result(
+            True, "list_nodes_by_type", None,
+            f"No {node_type} nodes registered.",
+            {"type": node_type, "nodes": [], "count": 0},
+            None,
+        )
+    data = [_node_metrics_dict(n) for n in nodes]
+    return _make_result(
+        True, "list_nodes_by_type", None,
+        f"{len(nodes)} {node_type} node{'s' if len(nodes) != 1 else ''} registered",
+        {"type": node_type, "nodes": data, "count": len(nodes)},
+        None,
+    )
+
+
+async def send_node_command(node_name: str, command: str, payload: dict | None = None) -> dict:
+    """
+    Send a command to a node via its silvia-agent.
+    Returns result dict. Raises no exceptions — all errors captured.
+    """
+    import httpx
+
+    command = command.strip().lower()
+    if command not in _SAFE_COMMANDS:
+        return _make_result(
+            False, "send_node_command", node_name,
+            f"Unknown command '{command}'.",
+            None,
+            f"Command '{command}' is not in the allowed set: {sorted(_SAFE_COMMANDS)}",
+        )
+
+    node = _find_node(node_name)
+    if not node:
+        return _make_result(
+            False, "send_node_command", node_name,
+            f"Node '{node_name}' not found in registry.",
+            None,
+            f"No node named '{node_name}'.",
+        )
+
+    if not node.agent_url:
+        return _make_result(
+            False, "send_node_command", node.name,
+            f"{node.name} has no silvia-agent configured — cannot send commands.",
+            None,
+            "No agent_url on this node.",
+        )
+
+    url = node.agent_url.rstrip("/") + "/command"
+    body = {"command": command, "payload": payload or {}}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, json=body)
+            resp.raise_for_status()
+        result_data = resp.json()
+        ok = result_data.get("ok", False)
+        message = result_data.get("message") or result_data.get("error") or ""
+        return _make_result(
+            ok, "send_node_command", node.name,
+            f"{node.name}: {message}" if message else f"Command '{command}' sent to {node.name}.",
+            result_data,
+            None if ok else result_data.get("error", "Command failed"),
+        )
+    except httpx.HTTPStatusError as exc:
+        detail = ""
+        try:
+            detail = exc.response.json().get("detail", "")
+        except Exception:
+            pass
+        return _make_result(
+            False, "send_node_command", node.name,
+            f"Command rejected: {detail or exc.response.status_code}",
+            None,
+            detail or str(exc),
+        )
+    except Exception as exc:
+        return _make_result(
+            False, "send_node_command", node.name,
+            f"Could not reach {node.name}: {type(exc).__name__}",
+            None,
+            str(exc),
+        )

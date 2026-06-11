@@ -80,6 +80,14 @@ def _init_db() -> None:
             ("temperature", "REAL"),
             ("last_verified", "TEXT"),
             ("verification_source", "TEXT"),
+            # Phase 7A/7B — robotics telemetry
+            ("battery_pct", "REAL"),
+            ("position_lat", "REAL"),
+            ("position_lon", "REAL"),
+            ("altitude", "REAL"),
+            ("heading", "REAL"),
+            ("mission_state", "TEXT"),
+            ("imu_data", "TEXT"),
         ]:
             if column_name not in existing:
                 conn.execute(f"ALTER TABLE nodes ADD COLUMN {column_name} {column_type}")
@@ -109,10 +117,14 @@ def _row_to_node(row) -> Node:
     d["tags"] = json.loads(d.get("tags") or "[]")
     d["services"] = json.loads(d["services"]) if d.get("services") else None
     d["capabilities"] = json.loads(d["capabilities"]) if d.get("capabilities") else None
+    d["imu_data"] = json.loads(d["imu_data"]) if d.get("imu_data") else None
     if d.get("hostname_valid") is not None:
         d["hostname_valid"] = bool(d["hostname_valid"])
     if d.get("tailscale_reachable") is not None:
         d["tailscale_reachable"] = bool(d["tailscale_reachable"])
+    # Remove unknown fields that aren't in the Node model
+    known = Node.model_fields.keys()
+    d = {k: v for k, v in d.items() if k in known}
     return Node(**d)
 
 
@@ -129,6 +141,17 @@ class NodeService:
         try:
             rows = conn.execute(
                 "SELECT * FROM nodes ORDER BY name ASC"
+            ).fetchall()
+            return [_row_to_node(r) for r in rows]
+        finally:
+            conn.close()
+
+    def list_nodes_by_type(self, node_type: str) -> list[Node]:
+        conn = _conn()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM nodes WHERE type = ? ORDER BY name ASC",
+                (node_type,),
             ).fetchall()
             return [_row_to_node(r) for r in rows]
         finally:
@@ -178,6 +201,8 @@ class NodeService:
             updates["services"] = json.dumps(updates["services"])
         if "capabilities" in updates:
             updates["capabilities"] = json.dumps(updates["capabilities"])
+        if "imu_data" in updates and updates["imu_data"] is not None:
+            updates["imu_data"] = json.dumps(updates["imu_data"])
         updates["last_seen"] = datetime.now(timezone.utc).isoformat()
         cols = ", ".join(f"{k} = ?" for k in updates)
         vals = list(updates.values()) + [node_id]

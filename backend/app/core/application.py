@@ -51,14 +51,26 @@ async def _agent_poll_loop(router: AssistantPlatformRouter) -> None:
                         capabilities=cap_data.get("capabilities"),
                         last_verified=datetime.now(timezone.utc).isoformat(),
                         verification_source="silvia-agent",
+                        # Robotics / edge telemetry
+                        battery_pct=tel.get("battery_pct"),
+                        position_lat=tel.get("position_lat"),
+                        position_lon=tel.get("position_lon"),
+                        altitude=tel.get("altitude"),
+                        heading=tel.get("heading"),
+                        mission_state=tel.get("mission_state"),
+                        imu_data=tel.get("imu_data"),
                     )
                     node_svc.update_metrics(node.id, metrics)
 
-                    detail = f"Agent online"
+                    detail = "Agent online"
                     if tel.get("cpu") is not None:
                         detail += f" · CPU {tel['cpu']:.0f}% RAM {tel['ram']:.0f}%"
                     if tel.get("temperature") is not None:
                         detail += f" · {tel['temperature']:.0f}°C"
+                    if tel.get("battery_pct") is not None:
+                        detail += f" · Bat {tel['battery_pct']:.0f}%"
+                    if tel.get("mission_state"):
+                        detail += f" · {tel['mission_state']}"
                     await router.event_service.emit(f"Agent: {node.name}", detail, "info")
                     await router.event_service.emit_ws_only({
                         "type": "node_telemetry",
@@ -69,6 +81,12 @@ async def _agent_poll_loop(router: AssistantPlatformRouter) -> None:
                         "disk": tel.get("disk"),
                         "temperature": tel.get("temperature"),
                         "uptime": tel.get("uptime"),
+                        "battery_pct": tel.get("battery_pct"),
+                        "position_lat": tel.get("position_lat"),
+                        "position_lon": tel.get("position_lon"),
+                        "altitude": tel.get("altitude"),
+                        "heading": tel.get("heading"),
+                        "mission_state": tel.get("mission_state"),
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
 
