@@ -40,6 +40,7 @@ scikit-learn>=1.4.0
 # Utility
 python-dateutil>=2.8.2
 pytz>=2024.1
+timezonefinder>=6.0.0
 
 # Development (optional, install separately)
 # pytest>=7.4.0

@@ -193,15 +193,15 @@ class ConversationService:
                     result = self._render_time_there(data)
                     await self._emit_tool("[TOOL] get_time_in", result)
                     return self._simple_response("Time", result)
-                except ValueError:
-                    err = f"No timezone found for location: {place}"
+                except ValueError as ve:
+                    err = str(ve)
                     await self._emit_tool("[TOOL] get_time_in", err, "warning")
-                    return self._simple_response("Time", f"No timezone found for {place}.")
+                    return self._simple_response("Time", err)
                 except Exception as fetch_err:
                     err = f"{type(fetch_err).__name__}: {fetch_err}"
                     logger.warning("Time lookup failed for '%s': %s", place, fetch_err)
                     await self._emit_tool("[TOOL] get_time_in", err, "error")
-                    return self._simple_response("Time", f"Time lookup failed for {place}: {type(fetch_err).__name__}.")
+                    return self._simple_response("Time", f"Time lookup failed for {place}.")
 
             if name == "get_weather":
                 place = args.get("place", "").strip()
