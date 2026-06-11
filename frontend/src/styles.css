@@ -1291,6 +1291,30 @@ h1, h2, h3 {
   letter-spacing: 0.06em;
 }
 
+.infra-system-badge {
+  display: inline-block;
+  font-size: 0.52rem;
+  padding: 1px 4px;
+  border-radius: 0;
+  background: rgba(255, 184, 0, 0.06);
+  border: 1px solid rgba(255, 184, 0, 0.30);
+  color: var(--accent-warm);
+  margin-left: 5px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.infra-system-note {
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  border-left: 2px solid var(--accent-warm);
+  background: rgba(255, 184, 0, 0.04);
+}
+
 .infra-agent-badge {
   display: inline-block;
   font-size: 0.52rem;

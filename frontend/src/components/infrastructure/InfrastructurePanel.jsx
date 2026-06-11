@@ -55,6 +55,8 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState(EMPTY_FORM);
+  const [configuringId, setConfiguringId] = useState(null);
+  const [configForm, setConfigForm] = useState({ agent_url: "", notes: "", tags: "" });
   const [submitting, setSubmitting] = useState(false);
   const [probingId, setProbingId] = useState(null);
 
@@ -137,6 +139,31 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
     }
   }
 
+  function startConfigure(node) {
+    setConfiguringId(node.id);
+    setConfigForm({
+      agent_url: node.agent_url || "",
+      notes: node.notes || "",
+      tags: (node.tags || []).join(", "),
+    });
+  }
+
+  async function handleSaveConfigure(e) {
+    e.preventDefault();
+    if (!configuringId || !onSaveNode) return;
+    setSubmitting(true);
+    try {
+      await onSaveNode(configuringId, {
+        agent_url: configForm.agent_url.trim() || null,
+        notes: configForm.notes.trim() || null,
+        tags: configForm.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      });
+      setConfiguringId(null);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   async function handleDelete(id) {
     if (!window.confirm("Remove this node from the registry?")) return;
     await onDeleteNode(id);
@@ -191,6 +218,9 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
             >
               <span className={`infra-dot infra-dot--${STATUS_DOT[node.status] || "unknown"}`} />
               <span className="infra-name">{node.name}</span>
+              {node.id === "workstation" && (
+                <span className="infra-system-badge" title="Managed by CMD-CTR — core system node">SYSTEM</span>
+              )}
               {node.agent_url && (
                 <span className="infra-agent-badge" title={node.agent_url}>AGENT</span>
               )}
@@ -393,11 +423,54 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                     <span className="muted" style={{ fontSize: "0.7rem" }}>{node.notes}</span>
                   </div>
                 )}
+                {/* System node configure form */}
+                {node.id === "workstation" && configuringId === node.id && (
+                  <form className="infra-add-form" onSubmit={handleSaveConfigure} style={{ marginTop: "8px" }}>
+                    <p className="infra-system-note">System node — only agent URL, tags, and notes can be changed.</p>
+                    <div className="infra-form-row">
+                      <input
+                        className="infra-input"
+                        value={configForm.agent_url}
+                        onChange={(e) => setConfigForm((f) => ({ ...f, agent_url: e.target.value }))}
+                        placeholder="Agent URL (e.g. http://127.0.0.1:8765)"
+                      />
+                    </div>
+                    <div className="infra-form-row">
+                      <input
+                        className="infra-input"
+                        value={configForm.tags}
+                        onChange={(e) => setConfigForm((f) => ({ ...f, tags: e.target.value }))}
+                        placeholder="Tags (comma-separated)"
+                      />
+                    </div>
+                    <div className="infra-form-row">
+                      <input
+                        className="infra-input"
+                        value={configForm.notes}
+                        onChange={(e) => setConfigForm((f) => ({ ...f, notes: e.target.value }))}
+                        placeholder="Notes"
+                      />
+                    </div>
+                    <div className="button-row">
+                      <button type="submit" className="panel-button" disabled={submitting}>
+                        {submitting ? "Saving..." : "Save"}
+                      </button>
+                      <button type="button" className="btn-ghost-sm" onClick={() => setConfiguringId(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+
                 <div className="button-row">
                   <button className="btn-ghost-sm" onClick={() => handleProbe(node.id)} disabled={probingId === node.id}>
                     {probingId === node.id ? "Probing..." : "Probe"}
                   </button>
-                  {node.id !== "workstation" && (
+                  {node.id === "workstation" ? (
+                    <button className="btn-ghost-sm" onClick={() => startConfigure(node)}>
+                      Configure
+                    </button>
+                  ) : (
                     <>
                       <button className="btn-ghost-sm" onClick={() => startEdit(node)}>
                         Edit
