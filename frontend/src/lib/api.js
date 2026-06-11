@@ -115,6 +115,10 @@ export async function fetchDevices() {
   return readJson(await fetch(`${API_BASE}/devices`));
 }
 
+export async function fetchStockQuote(symbol) {
+  return readJson(await fetch(`${API_BASE}/world/stock/${encodeURIComponent(symbol)}`));
+}
+
 export async function fetchWorldEvents({ live = true, category, country } = {}) {
   const query = new URLSearchParams();
   if (live) query.set("live", "true");

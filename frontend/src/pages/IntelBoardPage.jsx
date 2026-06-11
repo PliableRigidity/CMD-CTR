@@ -4,7 +4,7 @@ import GlobeComponent from "../components/globe/GlobeComponent";
 import { getInitialState, startSimulation } from "../data/mockEngine";
 import { maritimeRoutes } from "../data/maritimeRoutes";
 import { publicCameras } from "../data/cameras";
-import { fetchWorldEvents } from "../lib/api";
+import { fetchWorldEvents, fetchStockQuote } from "../lib/api";
 
 // ── Market Ticker Bar ──────────────────────────────────────────────────────
 function MarketTicker({ markets }) {
@@ -268,6 +268,212 @@ function SimFeed({ threats, earthquakes, radiation }) {
   );
 }
 
+// ── Mini SVG Sparkline ────────────────────────────────────────────────────
+function Sparkline({ data, positive }) {
+  if (!data || data.length < 2) return <div className="w-20 h-6" />;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const W = 80, H = 24;
+  const pts = data
+    .map((v, i) => `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * (H - 2) - 1}`)
+    .join(" ");
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="overflow-visible shrink-0">
+      <polyline
+        points={pts}
+        fill="none"
+        stroke={positive ? "#34d399" : "#f87171"}
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+const DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA", "SPY", "TSLA"];
+
+// ── Stock Panel (left sidebar) ─────────────────────────────────────────────
+function StockPanel({ open, onToggle }) {
+  const [tickers, setTickers] = useState(() => {
+    try {
+      const saved = localStorage.getItem("silvia_stock_tickers");
+      return saved ? JSON.parse(saved) : DEFAULT_TICKERS;
+    } catch { return DEFAULT_TICKERS; }
+  });
+  const [quotes, setQuotes] = useState({});    // symbol → quote data
+  const [errors, setErrors] = useState({});    // symbol → error string
+  const [loading, setLoading] = useState({});  // symbol → bool
+  const [input, setInput] = useState("");
+  const [inputError, setInputError] = useState("");
+
+  // Persist tickers to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("silvia_stock_tickers", JSON.stringify(tickers));
+  }, [tickers]);
+
+  // Fetch a single symbol
+  const fetchOne = async (sym) => {
+    setLoading(p => ({ ...p, [sym]: true }));
+    setErrors(p => { const n = { ...p }; delete n[sym]; return n; });
+    try {
+      const q = await fetchStockQuote(sym);
+      setQuotes(p => ({ ...p, [sym]: q }));
+    } catch (err) {
+      const msg = err.message?.includes("404") ? "Not found" : "Fetch error";
+      setErrors(p => ({ ...p, [sym]: msg }));
+    } finally {
+      setLoading(p => ({ ...p, [sym]: false }));
+    }
+  };
+
+  // Initial fetch + 60s refresh
+  useEffect(() => {
+    tickers.forEach(fetchOne);
+    const id = setInterval(() => tickers.forEach(fetchOne), 60000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickers.join(",")]);
+
+  const addTicker = () => {
+    const sym = input.trim().toUpperCase().replace(/[^A-Z0-9.\-^=]/g, "");
+    if (!sym) return;
+    if (tickers.includes(sym)) { setInputError("Already tracking"); return; }
+    setInputError("");
+    setTickers(p => [...p, sym]);
+    setInput("");
+  };
+
+  const removeTicker = (sym) => {
+    setTickers(p => p.filter(s => s !== sym));
+    setQuotes(p => { const n = { ...p }; delete n[sym]; return n; });
+    setErrors(p => { const n = { ...p }; delete n[sym]; return n; });
+  };
+
+  const handleKey = (e) => { if (e.key === "Enter") addTicker(); };
+
+  if (!open) {
+    return (
+      <button
+        onClick={onToggle}
+        className="absolute top-20 left-4 z-30 bg-slate-900/80 border border-cyan-500/30 text-cyan-400 text-xs px-2 py-1 rounded hover:bg-slate-800/80 transition-colors"
+      >
+        Stocks ›
+      </button>
+    );
+  }
+
+  return (
+    <aside className="absolute top-[76px] left-0 bottom-0 z-20 w-60 bg-slate-950/92 backdrop-blur border-r border-cyan-500/20 flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40 shrink-0">
+        <p className="text-[10px] text-slate-500 uppercase tracking-widest">Market Watch</p>
+        <button
+          onClick={onToggle}
+          className="text-slate-600 hover:text-slate-300 text-xs transition-colors"
+        >
+          ‹ Hide
+        </button>
+      </div>
+
+      {/* Add ticker input */}
+      <div className="px-3 py-2 border-b border-slate-700/40 shrink-0">
+        <div className="flex gap-1.5">
+          <input
+            value={input}
+            onChange={e => { setInput(e.target.value.toUpperCase()); setInputError(""); }}
+            onKeyDown={handleKey}
+            placeholder="TICKER"
+            maxLength={10}
+            className="flex-1 min-w-0 bg-slate-900 border border-slate-700/60 rounded px-2 py-1 text-[11px] font-mono text-slate-200 placeholder-slate-700 focus:outline-none focus:border-cyan-500/60"
+          />
+          <button
+            onClick={addTicker}
+            className="shrink-0 bg-cyan-500/10 border border-cyan-500/40 text-cyan-400 text-[10px] px-2 py-1 rounded hover:bg-cyan-500/20 transition-colors"
+          >
+            Add
+          </button>
+        </div>
+        {inputError && <p className="text-[9px] text-red-400 mt-1">{inputError}</p>}
+      </div>
+
+      {/* Stock list */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {tickers.map(sym => {
+          const q = quotes[sym];
+          const err = errors[sym];
+          const busy = loading[sym];
+          const positive = q ? q.change >= 0 : true;
+
+          return (
+            <div key={sym} className="group px-3 py-2 border-b border-slate-800/50 hover:bg-slate-900/40 transition-colors">
+              {/* Row 1: symbol + remove + price */}
+              <div className="flex items-start justify-between gap-1 mb-1">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-bold text-slate-100 font-mono tracking-wide">{sym}</span>
+                    {q?.marketState === "PRE" && <span className="text-[8px] text-amber-500/80 border border-amber-500/30 rounded px-0.5">PRE</span>}
+                    {q?.marketState === "POST" && <span className="text-[8px] text-blue-400/80 border border-blue-400/30 rounded px-0.5">POST</span>}
+                    {q?.marketState === "CLOSED" && <span className="text-[8px] text-slate-600 border border-slate-700/40 rounded px-0.5">CLOSED</span>}
+                  </div>
+                  {q?.name && (
+                    <p className="text-[8px] text-slate-600 leading-tight truncate max-w-[110px]">{q.name}</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {busy && !q && (
+                    <span className="text-[9px] text-slate-600 animate-pulse">…</span>
+                  )}
+                  {q && (
+                    <div className="text-right">
+                      <p className="text-[12px] font-bold text-slate-100 tabular-nums leading-none">{q.price.toFixed(2)}</p>
+                      <p className={`text-[9px] tabular-nums leading-none mt-0.5 ${positive ? "text-emerald-400" : "text-red-400"}`}>
+                        {positive ? "▲" : "▼"} {Math.abs(q.changePercent).toFixed(2)}%
+                      </p>
+                    </div>
+                  )}
+                  {err && (
+                    <span className="text-[9px] text-red-500/80">{err}</span>
+                  )}
+                  <button
+                    onClick={() => removeTicker(sym)}
+                    className="opacity-0 group-hover:opacity-100 text-slate-700 hover:text-red-400 text-xs transition-all leading-none ml-0.5"
+                    title="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              {/* Row 2: sparkline + H/L */}
+              {q && (
+                <div className="flex items-center justify-between gap-1 mt-1">
+                  <Sparkline data={q.sparkline} positive={positive} />
+                  <div className="text-right text-[8px] text-slate-600 tabular-nums leading-snug">
+                    <p>H {q.high?.toFixed(2) ?? "—"}</p>
+                    <p>L {q.low?.toFixed(2) ?? "—"}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {tickers.length === 0 && (
+          <p className="text-[10px] text-slate-700 text-center py-6">No stocks tracked.<br />Enter a ticker above.</p>
+        )}
+      </div>
+
+      {/* Footer */}
+      <div className="px-3 py-2 border-t border-slate-700/40 shrink-0 text-[9px] text-slate-700 flex justify-between">
+        <span>Yahoo Finance · 60s refresh</span>
+        <span>{tickers.length} tracked</span>
+      </div>
+    </aside>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 export default function IntelBoardPage() {
   const [simData, setSimData] = useState(() => getInitialState());
@@ -276,6 +482,7 @@ export default function IntelBoardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState("intel"); // "intel" | "sim"
   const [categoryFilter, setCategoryFilter] = useState(null);
+  const [stockPanelOpen, setStockPanelOpen] = useState(true);
   const [clock, setClock] = useState(new Date());
   const stopSimRef = useRef(null);
 
@@ -387,6 +594,9 @@ export default function IntelBoardPage() {
       {selectedEvent && (
         <EventPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       )}
+
+      {/* ── Stock Panel (left) ── */}
+      <StockPanel open={stockPanelOpen} onToggle={() => setStockPanelOpen(v => !v)} />
 
       {/* ── Sidebar Toggle ── */}
       <button
