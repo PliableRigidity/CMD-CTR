@@ -66,6 +66,17 @@ async def probe_node(node_id: str, svc: NodeService = Depends(_get_service)):
     return node
 
 
+@router.post("/nodes/{node_id}/verify", response_model=Node)
+async def verify_node(node_id: str, svc: NodeService = Depends(_get_service)):
+    node = svc.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    from backend.app.tools.node_tool import verify_node_by_name
+    result = await verify_node_by_name(node.name)
+    updated = svc.get_node(node_id)
+    return updated
+
+
 @router.delete("/nodes/{node_id}", status_code=204)
 async def delete_node(node_id: str, svc: NodeService = Depends(_get_service)):
     deleted = svc.delete_node(node_id)

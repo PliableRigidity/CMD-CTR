@@ -1,12 +1,13 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from backend.app.api import actions, assistant, decision, devices, events, maps, memory, missions, mode, nodes, system, voice, watch, web, world
+from backend.app.api import actions, assistant, decision, devices, events, maps, memory, missions, mode, nodes, personal, system, voice, watch, web, world
 from backend.app.models.nodes import NodeMetricsUpdate
 from backend.app.orchestration.assistant_router import AssistantPlatformRouter
 from backend.app.services.node_service import NodeService
@@ -48,6 +49,8 @@ async def _agent_poll_loop(router: AssistantPlatformRouter) -> None:
                         uptime=tel.get("uptime"),
                         services=svc_data.get("services"),
                         capabilities=cap_data.get("capabilities"),
+                        last_verified=datetime.now(timezone.utc).isoformat(),
+                        verification_source="silvia-agent",
                     )
                     node_svc.update_metrics(node.id, metrics)
 
@@ -57,6 +60,17 @@ async def _agent_poll_loop(router: AssistantPlatformRouter) -> None:
                     if tel.get("temperature") is not None:
                         detail += f" · {tel['temperature']:.0f}°C"
                     await router.event_service.emit(f"Agent: {node.name}", detail, "info")
+                    await router.event_service.emit_ws_only({
+                        "type": "node_telemetry",
+                        "node_id": node.id,
+                        "node_name": node.name,
+                        "cpu": tel.get("cpu"),
+                        "ram": tel.get("ram"),
+                        "disk": tel.get("disk"),
+                        "temperature": tel.get("temperature"),
+                        "uptime": tel.get("uptime"),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
 
                 except Exception as exc:
                     # Mark offline only if previously online via agent
@@ -66,6 +80,134 @@ async def _agent_poll_loop(router: AssistantPlatformRouter) -> None:
                     await router.event_service.emit(
                         f"Agent: {node.name}", f"Unreachable — {type(exc).__name__}", "warning"
                     )
+
+        await asyncio.sleep(30)
+
+
+_OFFLINE_ALERT_MINUTES = 30   # raise offline alert after this many minutes of downtime
+_offline_since: dict[str, datetime] = {}  # node_id → first time noticed offline
+
+_CPU_WARN = 85.0
+_CPU_CRIT = 95.0
+_RAM_WARN = 85.0
+_RAM_CRIT = 95.0
+_DISK_WARN = 88.0
+_DISK_CRIT = 95.0
+_TEMP_WARN = 75.0
+_TEMP_CRIT = 85.0
+_STALE_MINUTES = 5
+
+
+def _is_fresh(last_seen: str | None) -> bool:
+    from datetime import timedelta
+    if not last_seen:
+        return False
+    try:
+        ts = datetime.fromisoformat(last_seen)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) - ts < timedelta(minutes=_STALE_MINUTES)
+    except Exception:
+        return False
+
+
+async def _watch_officer_loop(router: AssistantPlatformRouter) -> None:
+    """Evaluate node telemetry against thresholds, raise/resolve Watch Officer alerts."""
+    await asyncio.sleep(20)  # Start after agent poll has run at least once
+    from backend.app.services.watch_service import WatchService
+    node_svc = NodeService()
+    watch_svc = WatchService()
+
+    while True:
+        try:
+            nodes_list = node_svc.list_nodes()
+
+            for node in nodes_list:
+                prefix = f"node:{node.id}"
+
+                # ── Offline check (skip workstation — always local) ──────────
+                if node.id != "workstation":
+                    if node.status == "offline" and node.last_seen:
+                        _offline_since.setdefault(node.id, datetime.now(timezone.utc))
+                        offline_dur = datetime.now(timezone.utc) - _offline_since[node.id]
+                        if offline_dur.total_seconds() >= _OFFLINE_ALERT_MINUTES * 60:
+                            alert = watch_svc.raise_alert(
+                                rule_key=f"{prefix}:offline",
+                                message=f"{node.name} offline for {_OFFLINE_ALERT_MINUTES}+ min",
+                                category="infra",
+                                severity="critical",
+                            )
+                            if alert:
+                                await router.event_service.emit_ws_only({
+                                    "type": "watch_alert",
+                                    "alert": alert.model_dump(),
+                                })
+                                await router.event_service.emit(
+                                    f"[OPS] {node.name}", f"offline {_OFFLINE_ALERT_MINUTES}+ min", "error"
+                                )
+                    elif node.status == "online":
+                        _offline_since.pop(node.id, None)
+                        if watch_svc.resolve_alert(f"{prefix}:offline"):
+                            await router.event_service.emit_ws_only({
+                                "type": "watch_resolve",
+                                "rule_key": f"{prefix}:offline",
+                            })
+
+                # ── Metric threshold checks ──────────────────────────────────
+                # Only evaluate if telemetry is fresh (within last 5 minutes)
+                if not _is_fresh(node.last_seen):
+                    continue
+
+                checks = [
+                    ("cpu",         node.cpu,         _CPU_WARN,  _CPU_CRIT,  "CPU",  "%"),
+                    ("ram",         node.ram,         _RAM_WARN,  _RAM_CRIT,  "RAM",  "%"),
+                    ("disk",        node.disk,        _DISK_WARN, _DISK_CRIT, "Disk", "%"),
+                    ("temperature", node.temperature, _TEMP_WARN, _TEMP_CRIT, "Temp", "°C"),
+                ]
+                for metric, value, warn, crit, label, unit in checks:
+                    rule_key = f"{prefix}:{metric}_high"
+                    if value is None:
+                        continue
+
+                    if value >= crit:
+                        alert = watch_svc.raise_alert(
+                            rule_key=rule_key,
+                            message=f"{node.name} {label} {value:.0f}{unit}",
+                            category="infra",
+                            severity="critical",
+                        )
+                        if alert:
+                            await router.event_service.emit_ws_only({
+                                "type": "watch_alert",
+                                "alert": alert.model_dump(),
+                            })
+                            await router.event_service.emit(
+                                f"[OPS] {node.name}", f"{label} {value:.0f}{unit}", "error"
+                            )
+                    elif value >= warn:
+                        alert = watch_svc.raise_alert(
+                            rule_key=rule_key,
+                            message=f"{node.name} {label} {value:.0f}{unit}",
+                            category="infra",
+                            severity="warning",
+                        )
+                        if alert:
+                            await router.event_service.emit_ws_only({
+                                "type": "watch_alert",
+                                "alert": alert.model_dump(),
+                            })
+                            await router.event_service.emit(
+                                f"[OPS] {node.name}", f"{label} {value:.0f}{unit}", "warning"
+                            )
+                    else:
+                        if watch_svc.resolve_alert(rule_key):
+                            await router.event_service.emit_ws_only({
+                                "type": "watch_resolve",
+                                "rule_key": rule_key,
+                            })
+
+        except Exception as exc:
+            logger.warning("Watch officer loop error: %s", exc)
 
         await asyncio.sleep(30)
 
@@ -93,6 +235,43 @@ async def _node_probe_loop(router: AssistantPlatformRouter) -> None:
         await asyncio.sleep(60)
 
 
+async def _reminder_loop(router: AssistantPlatformRouter) -> None:
+    """Check for due reminders every 60s and fire them via Watch Officer + WebSocket."""
+    await asyncio.sleep(15)
+    from backend.app.services.reminder_service import ReminderService
+    from backend.app.services.watch_service import WatchService
+
+    reminder_svc = ReminderService()
+    watch_svc = WatchService()
+
+    while True:
+        try:
+            due = reminder_svc.get_due_reminders()
+            for reminder in due:
+                alert = watch_svc.raise_alert(
+                    rule_key=f"reminder:{reminder.id}",
+                    message=f"Reminder: {reminder.message}",
+                    category="system",
+                    severity="info",
+                )
+                if alert:
+                    await router.event_service.emit_ws_only({
+                        "type": "watch_alert",
+                        "alert": alert.model_dump(),
+                    })
+                    await router.event_service.emit("[REM]", reminder.message, "info")
+
+                if reminder.recurrence == "once":
+                    reminder_svc.complete_reminder(reminder.id)
+                else:
+                    reminder_svc.advance_recurrence(reminder.id)
+                    # Auto-resolve so the same alert can fire again next cycle
+                    watch_svc.resolve_alert(f"reminder:{reminder.id}")
+        except Exception as exc:
+            logger.warning("Reminder loop error: %s", exc)
+        await asyncio.sleep(60)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
@@ -110,13 +289,27 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Wake word detector pre-warm failed (non-fatal): %s", exc)
 
+    # Retroactively index existing messages into semantic memory (non-blocking)
+    async def _index_existing_messages():
+        try:
+            n = await router.semantic_memory_service.index_existing(limit=200)
+            logger.info("Semantic memory: indexed %d existing turns", n)
+        except Exception as exc:
+            logger.debug("Semantic memory retroactive index failed (non-fatal): %s", exc)
+
+    asyncio.create_task(_index_existing_messages())
+
     probe_task = asyncio.create_task(_node_probe_loop(router))
     agent_task = asyncio.create_task(_agent_poll_loop(router))
+    watch_task = asyncio.create_task(_watch_officer_loop(router))
+    reminder_task = asyncio.create_task(_reminder_loop(router))
 
     yield
 
     probe_task.cancel()
     agent_task.cancel()
+    watch_task.cancel()
+    reminder_task.cancel()
     logger.info("Assistant platform shutdown")
 
 
@@ -155,4 +348,5 @@ def create_app() -> FastAPI:
     app.include_router(missions.router, prefix="/api")
     app.include_router(nodes.router, prefix="/api")
     app.include_router(watch.router, prefix="/api")
+    app.include_router(personal.router, prefix="/api")
     return app

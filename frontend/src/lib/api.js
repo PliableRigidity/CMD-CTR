@@ -331,6 +331,14 @@ export async function probeNode(id) {
   );
 }
 
+export async function verifyNode(id) {
+  return readJson(
+    await fetch(`${API_BASE}/nodes/${id}/verify`, {
+      method: "POST",
+    }),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Watch Officer
 // ---------------------------------------------------------------------------

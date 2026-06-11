@@ -41,6 +41,11 @@ def _init_db() -> None:
             );
         """)
         conn.commit()
+        # Runtime migration: add rule_key column if absent
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(watch_alerts)").fetchall()}
+        if "rule_key" not in cols:
+            conn.execute("ALTER TABLE watch_alerts ADD COLUMN rule_key TEXT")
+            conn.commit()
         count = conn.execute("SELECT COUNT(*) FROM watch_alerts").fetchone()[0]
         if count == 0:
             now = datetime.now(timezone.utc).isoformat()
@@ -81,9 +86,9 @@ class WatchService:
         conn = _conn()
         try:
             conn.execute(
-                """INSERT INTO watch_alerts (id, message, category, severity, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (alert_id, data.message, data.category, data.severity, now),
+                """INSERT INTO watch_alerts (id, message, category, severity, created_at, rule_key)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (alert_id, data.message, data.category, data.severity, now, data.rule_key),
             )
             conn.commit()
         finally:
@@ -94,7 +99,53 @@ class WatchService:
             category=data.category,
             severity=data.severity,
             created_at=now,
+            rule_key=data.rule_key,
         )
+
+    def raise_alert(
+        self,
+        rule_key: str,
+        message: str,
+        category: str,
+        severity: str,
+    ) -> WatchAlert | None:
+        """Idempotent — creates an alert only if no active alert with this rule_key exists.
+        Returns the new WatchAlert, or None if one was already active."""
+        conn = _conn()
+        try:
+            existing = conn.execute(
+                "SELECT id FROM watch_alerts WHERE rule_key = ? AND dismissed = 0",
+                (rule_key,),
+            ).fetchone()
+            if existing:
+                return None
+            alert_id = str(uuid.uuid4())[:8]
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                """INSERT INTO watch_alerts (id, message, category, severity, created_at, rule_key)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (alert_id, message, category, severity, now, rule_key),
+            )
+            conn.commit()
+            return WatchAlert(
+                id=alert_id, message=message, category=category,
+                severity=severity, created_at=now, dismissed=False, rule_key=rule_key,
+            )
+        finally:
+            conn.close()
+
+    def resolve_alert(self, rule_key: str) -> bool:
+        """Auto-dismiss any active alerts with this rule_key. Returns True if any were resolved."""
+        conn = _conn()
+        try:
+            cur = conn.execute(
+                "UPDATE watch_alerts SET dismissed = 1 WHERE rule_key = ? AND dismissed = 0",
+                (rule_key,),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
 
     def dismiss_alert(self, alert_id: str) -> bool:
         conn = _conn()

@@ -78,6 +78,8 @@ def _init_db() -> None:
             ("capabilities", "TEXT"),
             ("uptime", "INTEGER"),
             ("temperature", "REAL"),
+            ("last_verified", "TEXT"),
+            ("verification_source", "TEXT"),
         ]:
             if column_name not in existing:
                 conn.execute(f"ALTER TABLE nodes ADD COLUMN {column_name} {column_type}")
@@ -215,13 +217,18 @@ class NodeService:
             return self._probe_local(node_id)
 
         probe = self._probe_targets(node)
+        verified_at = probe["checked_at"] if probe["status"] == "online" else None
+        v_source = "tailscale" if probe.get("tailscale_reachable") else ("ping" if probe["status"] == "online" else None)
         conn = _conn()
         try:
             conn.execute(
                 """
                 UPDATE nodes
                 SET status = ?, last_probe_at = ?, latency_ms = ?, resolved_ip = ?,
-                    hostname_valid = ?, tailscale_reachable = ?, probe_error = ?, last_seen = COALESCE(?, last_seen)
+                    hostname_valid = ?, tailscale_reachable = ?, probe_error = ?,
+                    last_seen = COALESCE(?, last_seen),
+                    last_verified = COALESCE(?, last_verified),
+                    verification_source = COALESCE(?, verification_source)
                 WHERE id = ?
                 """,
                 (
@@ -233,6 +240,8 @@ class NodeService:
                     None if probe["tailscale_reachable"] is None else int(probe["tailscale_reachable"]),
                     probe["probe_error"],
                     probe["checked_at"] if probe["status"] == "online" else None,
+                    verified_at,
+                    v_source,
                     node_id,
                 ),
             )
@@ -266,9 +275,10 @@ class NodeService:
             conn.execute(
                 """UPDATE nodes SET status='online', last_probe_at=?, last_seen=?,
                    latency_ms=0.1, resolved_ip='127.0.0.1', hostname_valid=1,
-                   tailscale_reachable=NULL, probe_error=NULL, cpu=?, ram=?, disk=?
+                   tailscale_reachable=NULL, probe_error=NULL, cpu=?, ram=?, disk=?,
+                   last_verified=?, verification_source='local'
                    WHERE id=?""",
-                (checked_at, checked_at, cpu, ram, disk, node_id),
+                (checked_at, checked_at, cpu, ram, disk, checked_at, node_id),
             )
             conn.commit()
         finally:

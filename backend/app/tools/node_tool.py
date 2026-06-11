@@ -1,10 +1,12 @@
-"""Node registry tools — lookup, probe, update, delete, SSH."""
+"""Node registry tools — lookup, probe, update, delete, SSH, verify."""
 from __future__ import annotations
 
 import re
 import shutil
+import socket
 import subprocess
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 _SAFE_USERNAME = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
@@ -289,6 +291,253 @@ def open_ssh_session(name: str, username: str) -> dict:
         True, "ssh_node", node.name,
         f"Opened SSH terminal -> {node.name} ({username}@{host}, source: {source})",
         {"host": host, "username": username, "source": source, "command": ssh_cmd},
+        None,
+    )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _ping_sync(host: str) -> dict:
+    started = time.perf_counter()
+    try:
+        result = subprocess.run(
+            ["ping", "-n", "1", "-w", "1200", host],
+            capture_output=True, text=True, timeout=4, check=False,
+        )
+        latency = round((time.perf_counter() - started) * 1000, 1)
+        return {
+            "reachable": result.returncode == 0,
+            "latency_ms": latency if result.returncode == 0 else None,
+        }
+    except Exception:
+        return {"reachable": False, "latency_ms": None}
+
+
+def _node_metrics_dict(node) -> dict:
+    return {
+        "name": node.name,
+        "type": node.type,
+        "status": node.status,
+        "cpu": node.cpu,
+        "ram": node.ram,
+        "disk": node.disk,
+        "temperature": node.temperature,
+        "uptime": node.uptime,
+        "last_seen": node.last_seen,
+        "last_probe_at": node.last_probe_at,
+        "agent_url": node.agent_url,
+        "source": "silvia-agent" if node.agent_url else "node-probe",
+    }
+
+
+def get_node_telemetry(name: str) -> dict:
+    """Return cached telemetry from the node registry for one node or all nodes."""
+    from backend.app.services.node_service import NodeService
+    ns = NodeService()
+
+    key = (name or "").lower().strip()
+    if not key or key in ("all", "all nodes", "every", "nodes", "infrastructure"):
+        nodes = ns.list_nodes()
+        data = [_node_metrics_dict(n) for n in nodes]
+        has_metrics = sum(
+            1 for n in nodes
+            if any(v is not None for v in [n.cpu, n.ram, n.disk, n.temperature])
+        )
+        return _make_result(
+            True, "get_node_telemetry", None,
+            f"{len(nodes)} nodes — {has_metrics} with telemetry data",
+            {"nodes": data, "total": len(nodes), "with_metrics": has_metrics},
+            None,
+        )
+
+    node = _find_node(name)
+    if not node:
+        return _make_result(
+            False, "get_node_telemetry", name,
+            f"Node '{name}' not found in registry.",
+            None,
+            f"No node named '{name}' in registry. Use 'list nodes' to see what's registered.",
+        )
+
+    parts = [f"{node.name} | {node.status}"]
+    if node.cpu is not None:
+        parts.append(f"CPU {node.cpu:.0f}%")
+    if node.ram is not None:
+        parts.append(f"RAM {node.ram:.0f}%")
+    if node.disk is not None:
+        parts.append(f"Disk {node.disk:.0f}%")
+    if node.temperature is not None:
+        parts.append(f"{node.temperature:.0f}°C")
+
+    return _make_result(
+        True, "get_node_telemetry", node.name,
+        " | ".join(parts),
+        _node_metrics_dict(node),
+        None,
+    )
+
+
+async def verify_node_by_name(name: str) -> dict:
+    """
+    Run the full verification chain for a named node:
+    local → silvia-agent → tailscale → DNS/ping
+    Updates last_verified + verification_source in the registry.
+    """
+    import asyncio
+    import httpx
+    from backend.app.services.node_service import NodeService
+    from backend.app.models.nodes import NodeMetricsUpdate
+
+    node = _find_node(name)
+    if not node:
+        return _make_result(
+            False, "verify_node", name,
+            f"Node '{name}' not found in registry.",
+            None,
+            f"No node named '{name}'. Use 'list nodes' to see registered nodes.",
+        )
+
+    ns = NodeService()
+    loop = asyncio.get_event_loop()
+
+    # 1. Local workstation — always verified
+    if node.type == "workstation" or node.hostname == "local":
+        now = _utc_now()
+        ns.update_metrics(node.id, NodeMetricsUpdate(
+            status="online", last_verified=now, verification_source="local",
+        ))
+        return _make_result(
+            True, "verify_node", node.name,
+            f"{node.name} verified — local machine",
+            {"name": node.name, "status": "online", "verification_source": "local",
+             "last_verified": now, "latency_ms": 0},
+            None,
+        )
+
+    # 2. Silvia-Agent /status
+    if node.agent_url:
+        url = node.agent_url.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=4.0) as client:
+                resp = await client.get(f"{url}/status")
+                if resp.status_code == 200:
+                    now = _utc_now()
+                    ns.update_metrics(node.id, NodeMetricsUpdate(
+                        status="online", last_verified=now, verification_source="silvia-agent",
+                    ))
+                    return _make_result(
+                        True, "verify_node", node.name,
+                        f"{node.name} verified via Silvia-Agent",
+                        {"name": node.name, "status": "online",
+                         "verification_source": "silvia-agent", "last_verified": now, "latency_ms": None},
+                        None,
+                    )
+        except Exception:
+            pass
+
+    # 3. Tailscale IP
+    if node.tailscale_ip:
+        result = await loop.run_in_executor(None, _ping_sync, node.tailscale_ip)
+        if result["reachable"]:
+            now = _utc_now()
+            ns.update_metrics(node.id, NodeMetricsUpdate(
+                status="online", last_verified=now, verification_source="tailscale",
+                latency_ms=result["latency_ms"],
+            ))
+            lat = f" ({result['latency_ms']:.0f}ms)" if result["latency_ms"] else ""
+            return _make_result(
+                True, "verify_node", node.name,
+                f"{node.name} verified via Tailscale{lat}",
+                {"name": node.name, "status": "online", "verification_source": "tailscale",
+                 "last_verified": now, "latency_ms": result["latency_ms"]},
+                None,
+            )
+
+    # 4. DNS + hostname ping
+    if node.hostname and node.hostname not in ("", "local"):
+        resolved_ip = None
+        try:
+            resolved_ip = socket.gethostbyname(node.hostname)
+        except OSError:
+            pass
+        target = resolved_ip or node.hostname
+        result = await loop.run_in_executor(None, _ping_sync, target)
+        if result["reachable"]:
+            now = _utc_now()
+            source = "dns" if resolved_ip else "ping"
+            ns.update_metrics(node.id, NodeMetricsUpdate(
+                status="online", last_verified=now, verification_source=source,
+                latency_ms=result["latency_ms"],
+            ))
+            lat = f" ({result['latency_ms']:.0f}ms)" if result["latency_ms"] else ""
+            return _make_result(
+                True, "verify_node", node.name,
+                f"{node.name} verified via {source.upper()}{lat}",
+                {"name": node.name, "status": "online", "verification_source": source,
+                 "last_verified": now, "latency_ms": result["latency_ms"]},
+                None,
+            )
+
+    # All methods failed
+    ns.update_metrics(node.id, NodeMetricsUpdate(status="offline"))
+    tried = []
+    if node.agent_url:
+        tried.append("Silvia-Agent")
+    if node.tailscale_ip:
+        tried.append("Tailscale")
+    if node.hostname:
+        tried.append("DNS/Ping")
+    reason = (
+        f"Tried: {', '.join(tried)}. All unreachable."
+        if tried
+        else "No connectivity options configured (no hostname, Tailscale IP, or agent URL)."
+    )
+    return _make_result(
+        False, "verify_node", node.name,
+        f"{node.name} — unreachable",
+        {"name": node.name, "status": "offline", "verification_source": None,
+         "last_verified": None, "error": reason},
+        reason,
+    )
+
+
+async def verify_all_nodes() -> dict:
+    """Verify every registered node sequentially and return a summary."""
+    from backend.app.services.node_service import NodeService
+
+    ns = NodeService()
+    nodes = ns.list_nodes()
+    results = []
+    for node in nodes:
+        r = await verify_node_by_name(node.name)
+        results.append(r)
+
+    verified = [r for r in results if r["ok"]]
+    failed = [r for r in results if not r["ok"]]
+    return _make_result(
+        True, "refresh_nodes", None,
+        f"Verified {len(verified)}/{len(nodes)} — {len(failed)} unreachable",
+        {
+            "results": [r["data"] for r in results if r.get("data")],
+            "verified_count": len(verified),
+            "failed_count": len(failed),
+            "total": len(nodes),
+        },
+        None,
+    )
+
+
+def get_watch_alerts() -> dict:
+    """Return all active (non-dismissed) Watch Officer alerts."""
+    from backend.app.services.watch_service import WatchService
+    ws = WatchService()
+    alerts = ws.list_alerts(include_dismissed=False)
+    return _make_result(
+        True, "get_watch_alerts", None,
+        f"{len(alerts)} active alert{'s' if len(alerts) != 1 else ''}",
+        {"alerts": [a.model_dump() for a in alerts], "count": len(alerts)},
         None,
     )
 

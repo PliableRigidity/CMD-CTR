@@ -55,6 +55,9 @@ class NodeMetricsUpdate(BaseModel):
     uptime: Optional[int] = None
     services: Optional[list[str]] = None
     capabilities: Optional[list[str]] = None
+    last_verified: Optional[str] = None
+    verification_source: Optional[str] = None
+    latency_ms: Optional[float] = None
 
 
 class Node(BaseModel):
@@ -75,6 +78,8 @@ class Node(BaseModel):
     capabilities: Optional[list[str]] = None
     last_seen: Optional[str] = None
     last_probe_at: Optional[str] = None
+    last_verified: Optional[str] = None
+    verification_source: Optional[str] = None
     latency_ms: Optional[float] = None
     resolved_ip: Optional[str] = None
     hostname_valid: Optional[bool] = None

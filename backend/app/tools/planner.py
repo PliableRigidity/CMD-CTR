@@ -59,8 +59,26 @@ TOOLS:
   Use when user asks what nodes are registered, online, or on the network.
   Examples: "what nodes are online", "list my devices", "what machines do I have"
 
+- get_node_telemetry: args {"node": string}
+  Use for ANY query about node telemetry, metrics, CPU, RAM, disk, temperature, health, or status display.
+  Set node to the node name for a specific node. Set node="all" (or leave empty) for all nodes.
+  Examples: "show workstation telemetry", "workstation cpu", "workstation ram", "pi5 telemetry",
+            "show all node telemetry", "show hottest node", "node health", "infrastructure status",
+            "show nighthawk metrics", "workstation status", "show workstation health"
+  IMPORTANT: Always call this tool immediately — never say "I need to check the registry."
+  If the data exists, display it. If it does not, explain exactly why (e.g. no agent configured).
+
+- verify_node: args {"node": string}
+  Run the full verification chain on a named node: silvia-agent → tailscale → DNS → ping.
+  Updates last_verified and verification_source in the registry.
+  Examples: "verify nighthawk", "confirm pi5 is online", "check workstation connectivity", "verify server1"
+
+- refresh_nodes: args {}
+  Verify all registered nodes using the full chain.
+  Examples: "verify all nodes", "refresh nodes", "check all nodes", "run verification"
+
 - get_node_info: args {"node": string}
-  Use when user asks about a specific node's status, details, or info.
+  Use when user asks for network details: IP address, connectivity, probe results of a node.
   Examples: "status of nighthawk", "nighthawk info", "what's the status of server1"
 
 - update_node_ip: args {"node": string, "ip": string}
@@ -105,12 +123,64 @@ TOOLS:
   Examples: "price of Apple", "AAPL stock price", "how much is Tesla", "NVDA quote", "what is Microsoft trading at"
   NEVER use search_web for stock price queries — always use get_stock_price.
 
+- get_watch_alerts: args {}
+  Return all active Watch Officer alerts. Use for any query about alerts, watch officer status, or what's being monitored.
+  Examples: "show alerts", "active alerts", "watch officer status", "any alerts", "what alerts are active", "show watch alerts"
+
+- set_reminder: args {"raw": string}
+  Set a reminder. raw is the full reminder text after "remind me".
+  Examples: raw="in 10 minutes to check pi5", raw="tomorrow at 9am to review logs", raw="every Friday to backup Brain63"
+
+- list_reminders: args {}
+  List all active reminders. Examples: "show reminders", "list my reminders", "what reminders do I have"
+
+- delete_reminder: args {"query": string}
+  Delete a reminder by partial message. Examples: "delete reminder check pi5", "remove reminder backup"
+
+- complete_reminder: args {"query": string}
+  Mark a reminder as done. Examples: "complete reminder check pi5", "dismiss reminder backup"
+
+- add_task: args {"title": string, "project": string}
+  Add a task. project is optional (use "" if not specified).
+  Examples: "add task finish DroneHive PCB", "add task review code for project DroneHive"
+
+- list_tasks: args {"filter": string}
+  List tasks. filter is "pending" (default), "done", or "all".
+  Examples: "show my tasks", "list pending tasks", "show completed tasks"
+
+- complete_task: args {"query": string}
+  Complete a task by partial title. Examples: "complete task DroneHive PCB", "mark done finish PCB"
+
+- delete_task: args {"query": string}
+  Delete a task by partial title. Examples: "delete task DroneHive PCB", "remove task finish PCB"
+
+- get_calendar_today: args {}
+  Show today's calendar events. Examples: "what's on my calendar today", "today's schedule", "any events today"
+
+- get_upcoming_events: args {"days": int}
+  Show upcoming events. days defaults to 7.
+  Examples: "upcoming events", "what's coming up this week", "next 7 days schedule"
+
+- create_calendar_event: args {"raw": string}
+  Create a calendar event. raw is the full event description.
+  Examples: raw="Robotics Meeting tomorrow at 3pm", raw="team sync Monday at 10am"
+
+- delete_calendar_event: args {"query": string}
+  Delete a calendar event by partial title. Examples: "delete event Robotics Meeting", "cancel meeting team sync"
+
+- semantic_search: args {"query": string}
+  Search past conversation history by meaning/topic.
+  Use for: "what did I say about X", "find conversations about Y", "did we discuss Z", "previous discussions about W"
+  Examples: "what did I say about DroneHive", "find conversations about the pi5", "did we discuss networking"
+
 RULES:
 - Time + weather for same place → call_tools with both.
 - Weather with no location → {"action":"final"}
 - Open/launch/volume/navigate commands → {"action":"final"}  (handled elsewhere)
 - Greetings, capability questions, casual chat → {"action":"final"}
 - Node queries MUST use node tools — never answer from memory.
+- Node telemetry/metrics/CPU/RAM/disk/health queries → ALWAYS use get_node_telemetry immediately.
+- Never return placeholder responses like "I need to check the registry" — call the tool.
 - Output ONE JSON object only. Nothing else.
 """
 
@@ -180,6 +250,57 @@ FEW_SHOTS: list[dict] = [
 
     {"role": "user",      "content": "SPY stock"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"get_stock_price","args":{"query":"SPY"}}'},
+
+    {"role": "user",      "content": "verify nighthawk"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"verify_node","args":{"node":"nighthawk"}}'},
+
+    {"role": "user",      "content": "confirm pi5 is online"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"verify_node","args":{"node":"pi5"}}'},
+
+    {"role": "user",      "content": "check workstation connectivity"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"verify_node","args":{"node":"workstation"}}'},
+
+    {"role": "user",      "content": "verify all nodes"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"refresh_nodes","args":{}}'},
+
+    {"role": "user",      "content": "refresh nodes"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"refresh_nodes","args":{}}'},
+
+    {"role": "user",      "content": "check all nodes"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"refresh_nodes","args":{}}'},
+
+    {"role": "user",      "content": "show workstation telemetry"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"workstation"}}'},
+
+    {"role": "user",      "content": "workstation telemetry"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"workstation"}}'},
+
+    {"role": "user",      "content": "show workstation cpu"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"workstation"}}'},
+
+    {"role": "user",      "content": "show workstation ram"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"workstation"}}'},
+
+    {"role": "user",      "content": "show workstation status"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"workstation"}}'},
+
+    {"role": "user",      "content": "pi5 telemetry"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"pi5"}}'},
+
+    {"role": "user",      "content": "show nighthawk metrics"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"nighthawk"}}'},
+
+    {"role": "user",      "content": "show all node telemetry"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"all"}}'},
+
+    {"role": "user",      "content": "show hottest node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"all"}}'},
+
+    {"role": "user",      "content": "show node health"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"all"}}'},
+
+    {"role": "user",      "content": "show infrastructure status"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"all"}}'},
 
     {"role": "user",      "content": "hello"},
     {"role": "assistant", "content": '{"action":"final"}'},
@@ -282,6 +403,106 @@ FEW_SHOTS: list[dict] = [
 
     {"role": "user",      "content": "terminal tasklist"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"run_command","args":{"cmd":"tasklist"}}'},
+
+    {"role": "user",      "content": "show alerts"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_watch_alerts","args":{}}'},
+
+    {"role": "user",      "content": "active alerts"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_watch_alerts","args":{}}'},
+
+    {"role": "user",      "content": "watch officer status"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_watch_alerts","args":{}}'},
+
+    {"role": "user",      "content": "what alerts are active"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_watch_alerts","args":{}}'},
+
+    {"role": "user",      "content": "show watch alerts"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_watch_alerts","args":{}}'},
+
+    {"role": "user",      "content": "any alerts"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_watch_alerts","args":{}}'},
+
+    # ── Reminders ──────────────────────────────────────────────────────────────
+    {"role": "user",      "content": "remind me in 10 minutes to check the pi5"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"set_reminder","args":{"raw":"in 10 minutes to check the pi5"}}'},
+
+    {"role": "user",      "content": "remind me tomorrow at 9am to review the logs"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"set_reminder","args":{"raw":"tomorrow at 9am to review the logs"}}'},
+
+    {"role": "user",      "content": "remind me every Friday to backup Brain63"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"set_reminder","args":{"raw":"every Friday to backup Brain63"}}'},
+
+    {"role": "user",      "content": "remind me to call mom tomorrow at 3pm"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"set_reminder","args":{"raw":"to call mom tomorrow at 3pm"}}'},
+
+    {"role": "user",      "content": "show reminders"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_reminders","args":{}}'},
+
+    {"role": "user",      "content": "list my reminders"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_reminders","args":{}}'},
+
+    {"role": "user",      "content": "delete reminder check pi5"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"delete_reminder","args":{"query":"check pi5"}}'},
+
+    {"role": "user",      "content": "complete reminder backup"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"complete_reminder","args":{"query":"backup"}}'},
+
+    # ── Tasks ──────────────────────────────────────────────────────────────────
+    {"role": "user",      "content": "add task: finish DroneHive PCB"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"add_task","args":{"title":"finish DroneHive PCB","project":""}}'},
+
+    {"role": "user",      "content": "add task review motor controller code"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"add_task","args":{"title":"review motor controller code","project":""}}'},
+
+    {"role": "user",      "content": "show my tasks"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_tasks","args":{"filter":"pending"}}'},
+
+    {"role": "user",      "content": "list pending tasks"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_tasks","args":{"filter":"pending"}}'},
+
+    {"role": "user",      "content": "complete task DroneHive PCB"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"complete_task","args":{"query":"DroneHive PCB"}}'},
+
+    {"role": "user",      "content": "delete task review code"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"delete_task","args":{"query":"review code"}}'},
+
+    # ── Calendar ───────────────────────────────────────────────────────────────
+    {"role": "user",      "content": "what's on my calendar today"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_calendar_today","args":{}}'},
+
+    {"role": "user",      "content": "today's schedule"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_calendar_today","args":{}}'},
+
+    {"role": "user",      "content": "upcoming events"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_upcoming_events","args":{"days":7}}'},
+
+    {"role": "user",      "content": "what's coming up this week"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_upcoming_events","args":{"days":7}}'},
+
+    {"role": "user",      "content": "create an event Robotics Meeting tomorrow at 3pm"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"create_calendar_event","args":{"raw":"Robotics Meeting tomorrow at 3pm"}}'},
+
+    {"role": "user",      "content": "schedule team sync Monday at 10am"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"create_calendar_event","args":{"raw":"team sync Monday at 10am"}}'},
+
+    {"role": "user",      "content": "delete event Robotics Meeting"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"delete_calendar_event","args":{"query":"Robotics Meeting"}}'},
+
+    # ── Semantic memory ────────────────────────────────────────────────────────
+    {"role": "user",      "content": "what did I say about DroneHive"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"semantic_search","args":{"query":"DroneHive"}}'},
+
+    {"role": "user",      "content": "find conversations about the pi5"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"semantic_search","args":{"query":"pi5"}}'},
+
+    {"role": "user",      "content": "did we discuss networking"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"semantic_search","args":{"query":"networking"}}'},
+
+    {"role": "user",      "content": "show previous discussions about nodes"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"semantic_search","args":{"query":"nodes"}}'},
+
+    {"role": "user",      "content": "what have we talked about regarding the weather"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"semantic_search","args":{"query":"weather"}}'},
 ]
 
 # ---------------------------------------------------------------------------
@@ -332,6 +553,32 @@ _STOCK_RE = re.compile(
 # Node / networking regexes — single-word node names (alphanumeric + dash/underscore)
 _N = r"([a-z0-9][a-z0-9_\-]*)"   # node name capture group
 _IP = r"([\d\.a-z0-9\-]+)"        # IP/hostname value
+
+# Telemetry / metrics keyword group
+_TKW = r"(?:telemetry|metrics?|stats?|health|status|cpu|ram|memory|disk|temperature|temp|uptime|load)"
+
+# "[show] <node> <metric>" — e.g. "show workstation telemetry", "workstation cpu"
+_NODE_TELEM = re.compile(
+    rf"^(?:(?:show|get|display|check)\s+)?{_N}(?:'s)?\s+{_TKW}[\?\.!]?$", re.I
+)
+# "show <metric> [for/of] <node>" — e.g. "show telemetry for pi5", "check cpu of nighthawk"
+_NODE_TELEM_FOR = re.compile(
+    rf"^(?:show|get|display|check)\s+{_TKW}(?:\s+(?:for|of|on|from))?\s+{_N}[\?\.!]?$", re.I
+)
+# All-node queries — "show all node telemetry", "node health", "infrastructure status"
+_ALL_TELEM = re.compile(
+    r"^(?:show\s+)?(?:all\s+)?(?:node|nodes?|infrastructure)\s+" + _TKW + r"[\?\.!]?$", re.I
+)
+# "show hottest node" / "hottest node"
+_HOTTEST_NODE = re.compile(r"^(?:show\s+)?hottest(?:\s+node)?[\?\.!]?$", re.I)
+
+# Verification
+_NODE_VERIFY = re.compile(
+    rf"^(?:verify|confirm|validate)\s+{_N}(?:\s+(?:is\s+)?(?:online|up|reachable|active))?[\?\.!]?$", re.I
+)
+_REFRESH_NODES = re.compile(
+    r"^(?:verify|refresh|check|run)\s+(?:all\s+)?(?:nodes?|devices?|machines?|verification)[\?\.!]?$", re.I
+)
 
 _NODE_IP_OF    = re.compile(rf"(?:ip(?:\s+address)?|address)\s+of\s+{_N}[\?\.!]?$", re.I)
 _NODE_IP_NAME  = re.compile(rf"what(?:'s| is)\s+(?:the\s+)?ip(?:\s+address)?\s+of\s+{_N}[\?\.!]?$", re.I)
@@ -391,6 +638,77 @@ _SYS_TOP      = re.compile(r"^(?:top|tasklist|get-process|ps\s+aux)[\?\.!]?$", r
 
 _SYS_RUN      = re.compile(r"^(?:run|execute|terminal|cmd|shell)\s+(.+)$", re.I)
 
+# ── Personal ops regexes ─────────────────────────────────────────────────────
+
+_REMIND_SET = re.compile(r'^(?:remind\s+me|set\s+(?:a\s+)?reminder(?:\s+for)?)\s+(.+)$', re.I)
+
+_REMIND_LIST = re.compile(
+    r'^(?:show|list|display|get|what)\s+(?:my\s+)?reminders?[\?\.!]?$'
+    r'|^(?:do\s+i\s+have\s+)?any\s+reminders?[\?\.!]?$',
+    re.I,
+)
+_REMIND_DELETE = re.compile(r'^(?:delete|remove|cancel)\s+reminder\s+(.+?)[\?\.!]?$', re.I)
+_REMIND_COMPLETE = re.compile(r'^(?:complete|dismiss|done\s+with)\s+reminder\s+(.+?)[\?\.!]?$', re.I)
+
+_TASK_ADD = re.compile(r'^(?:add|create|new)\s+(?:a\s+)?task[:\s]+(.+?)[\?\.!]?$', re.I)
+_TASK_LIST = re.compile(
+    r'^(?:show|list|display|get)\s+(?:my\s+)?(?:pending\s+)?tasks?[\?\.!]?$'
+    r'|^(?:what(?:\s+tasks?)?(?:\s+do\s+i\s+have)?|my\s+tasks?)[\?\.!]?$',
+    re.I,
+)
+_TASK_LIST_ALL = re.compile(r'^(?:show|list)\s+all\s+tasks?[\?\.!]?$', re.I)
+_TASK_LIST_DONE = re.compile(r'^(?:show|list)\s+(?:done|completed|finished)\s+tasks?[\?\.!]?$', re.I)
+_TASK_COMPLETE = re.compile(r'^(?:complete|finish|mark\s+(?:done|complete))\s+task\s+(.+?)[\?\.!]?$', re.I)
+_TASK_DELETE = re.compile(r'^(?:delete|remove)\s+task\s+(.+?)[\?\.!]?$', re.I)
+
+_CAL_TODAY = re.compile(
+    r"(?:what(?:'s|\s+is)?\s+(?:on\s+)?(?:my\s+)?calendar\s+today"
+    r"|today(?:'s)?\s+(?:schedule|events?|calendar|agenda)"
+    r"|(?:any|show)\s+events?\s+today"
+    r"|(?:show|get)\s+(?:my\s+)?(?:today(?:'s)?\s+)?calendar)",
+    re.I,
+)
+_CAL_UPCOMING = re.compile(
+    r"(?:upcoming\s+(?:events?|meetings?|schedule|appointments?)"
+    r"|(?:what(?:'s|\s+is)?\s+)?coming\s+up"
+    r"|(?:next|this)\s+week(?:'s)?\s+(?:schedule|events?|calendar)"
+    r"|(?:show|get)\s+(?:my\s+)?upcoming\s+(?:events?|schedule))",
+    re.I,
+)
+_CAL_CREATE = re.compile(
+    r'^(?:create|add|schedule|book)\s+(?:a[n]?\s+)?(?:new\s+)?(?:event|meeting|appointment|call)\s+(.+)$',
+    re.I,
+)
+_CAL_DELETE = re.compile(
+    r'^(?:delete|cancel|remove)\s+(?:event|meeting|appointment)\s+(.+?)[\?\.!]?$', re.I
+)
+
+# Watch Officer alerts
+_WATCH_ALERTS_RE = re.compile(
+    r"^(?:"
+    r"(?:show\s+)?(?:watch\s+(?:officer\s+)?alerts?|active\s+alerts?|alerts?\s+list|ops\s+alerts?)|"
+    r"watch\s+officer\s+status|"
+    r"what(?:'s|\s+is)?\s+(?:on\s+the\s+)?watch(?:\s+officer)?|"
+    r"what\s+alerts?\s+(?:are\s+)?(?:active|there)|"
+    r"any\s+(?:active\s+)?alerts?|"
+    r"show\s+alerts?"
+    r")[\?\.!]?$",
+    re.I,
+)
+
+
+# Semantic memory search
+_SEMANTIC_SEARCH_RE = re.compile(
+    r"(?:"
+    r"what\s+(?:did\s+(?:I|we)\s+(?:say|mention|discuss|write|ask|talk\s+about)?\s*|have\s+(?:I|we)\s+(?:talked?|discussed?|said|mentioned?)\s+)(?:about|regarding|on|for)?\s+(.+?)"
+    r"|find\s+(?:conversations?|discussions?|chats?)\s+(?:about|regarding|on)\s+(.+?)"
+    r"|(?:show|search)\s+(?:previous|past|prior|my)\s+(?:conversations?|discussions?|messages?|history)\s+(?:about|regarding|on)\s+(.+?)"
+    r"|did\s+(?:we|I)\s+(?:discuss|talk\s+about|mention)\s+(.+?)"
+    r"|search\s+(?:memory|history|conversations?)\s+(?:for|about)?\s*(.+?)"
+    r")[\?\.!]?$",
+    re.I,
+)
+
 
 def _regex_system(query: str) -> dict | None:
     text = query.strip()
@@ -431,6 +749,26 @@ def _regex_node(query: str) -> dict | None:
 
     if _NODE_LIST.search(text) or _NODE_LIST2.search(text) or _NODE_WHATS_ON.search(text):
         return {"action": "call_tool", "name": "list_nodes", "args": {}}
+
+    # Verification — check before telemetry/status patterns
+    if _REFRESH_NODES.match(text):
+        return {"action": "call_tool", "name": "refresh_nodes", "args": {}}
+
+    m = _NODE_VERIFY.match(text)
+    if m:
+        return {"action": "call_tool", "name": "verify_node", "args": {"node": m.group(1).strip()}}
+
+    # Telemetry / metrics — checked before generic status so "show workstation status" hits this
+    if _ALL_TELEM.match(text) or _HOTTEST_NODE.match(text):
+        return {"action": "call_tool", "name": "get_node_telemetry", "args": {"node": "all"}}
+
+    m = _NODE_TELEM.match(text)
+    if m:
+        return {"action": "call_tool", "name": "get_node_telemetry", "args": {"node": m.group(1).strip()}}
+
+    m = _NODE_TELEM_FOR.match(text)
+    if m:
+        return {"action": "call_tool", "name": "get_node_telemetry", "args": {"node": m.group(1).strip()}}
 
     m = _NODE_STATUS.search(text) or _NODE_STATUS2.search(text)
     if m:
@@ -488,6 +826,65 @@ def _regex_fallback(query: str) -> dict:
         raw = next((g for g in m.groups() if g), "").strip()
         if raw:
             return {"action": "call_tool", "name": "get_stock_price", "args": {"query": raw}}
+
+    if _WATCH_ALERTS_RE.match(text):
+        return {"action": "call_tool", "name": "get_watch_alerts", "args": {}}
+
+    # ── Semantic memory search ────────────────────────────────────────────────
+    m = _SEMANTIC_SEARCH_RE.search(query)
+    if m:
+        q = next((g for g in m.groups() if g), "").strip()
+        if q:
+            return {"action": "call_tool", "name": "semantic_search", "args": {"query": q}}
+
+    # ── Personal ops ─────────────────────────────────────────────────────────
+    m = _REMIND_SET.match(query)
+    if m:
+        return {"action": "call_tool", "name": "set_reminder", "args": {"raw": m.group(1).strip()}}
+
+    if _REMIND_LIST.match(text):
+        return {"action": "call_tool", "name": "list_reminders", "args": {}}
+
+    m = _REMIND_DELETE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "delete_reminder", "args": {"query": m.group(1).strip()}}
+
+    m = _REMIND_COMPLETE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "complete_reminder", "args": {"query": m.group(1).strip()}}
+
+    m = _TASK_ADD.match(query)
+    if m:
+        return {"action": "call_tool", "name": "add_task", "args": {"title": m.group(1).strip(), "project": ""}}
+
+    if _TASK_LIST_ALL.match(text):
+        return {"action": "call_tool", "name": "list_tasks", "args": {"filter": "all"}}
+    if _TASK_LIST_DONE.match(text):
+        return {"action": "call_tool", "name": "list_tasks", "args": {"filter": "done"}}
+    if _TASK_LIST.match(text):
+        return {"action": "call_tool", "name": "list_tasks", "args": {"filter": "pending"}}
+
+    m = _TASK_COMPLETE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "complete_task", "args": {"query": m.group(1).strip()}}
+
+    m = _TASK_DELETE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "delete_task", "args": {"query": m.group(1).strip()}}
+
+    if _CAL_TODAY.search(text):
+        return {"action": "call_tool", "name": "get_calendar_today", "args": {}}
+
+    if _CAL_UPCOMING.search(text):
+        return {"action": "call_tool", "name": "get_upcoming_events", "args": {"days": 7}}
+
+    m = _CAL_CREATE.match(query)
+    if m:
+        return {"action": "call_tool", "name": "create_calendar_event", "args": {"raw": m.group(1).strip()}}
+
+    m = _CAL_DELETE.match(text)
+    if m:
+        return {"action": "call_tool", "name": "delete_calendar_event", "args": {"query": m.group(1).strip()}}
 
     system_result = _regex_system(query)
     if system_result:

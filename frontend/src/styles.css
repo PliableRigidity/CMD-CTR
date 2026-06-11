@@ -1176,10 +1176,9 @@ h1, h2, h3 {
 .infra-node { display: flex; flex-direction: column; }
 
 .infra-row {
-  display: grid;
-  grid-template-columns: 8px 1fr auto auto;
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   padding: 5px 7px;
   border-radius: 0;
   border: 1px solid var(--line-dim);
@@ -1221,6 +1220,8 @@ h1, h2, h3 {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .infra-metrics-inline {
@@ -1228,6 +1229,7 @@ h1, h2, h3 {
   gap: 3px;
   align-items: center;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .infra-metric {
@@ -1247,6 +1249,7 @@ h1, h2, h3 {
   text-transform: uppercase;
   letter-spacing: 0.12em;
   flex-shrink: 0;
+  margin-left: 6px;
 }
 
 .infra-status--online  { color: var(--success); }
@@ -1324,6 +1327,20 @@ h1, h2, h3 {
   border: 1px solid rgba(0, 229, 255, 0.30);
   color: var(--accent);
   margin-left: 5px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.infra-verified-badge {
+  display: inline-block;
+  font-size: 0.52rem;
+  padding: 1px 4px;
+  border-radius: 0;
+  background: rgba(0, 255, 136, 0.06);
+  border: 1px solid rgba(0, 255, 136, 0.30);
+  color: var(--success);
   letter-spacing: 0.10em;
   text-transform: uppercase;
   vertical-align: middle;

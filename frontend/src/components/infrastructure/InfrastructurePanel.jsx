@@ -48,7 +48,15 @@ function MetricBar({ value, label }) {
   );
 }
 
-export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode, onProbeNode, onDeleteNode }) {
+const VERIFY_SOURCE_LABELS = {
+  local: "Local",
+  "silvia-agent": "Silvia-Agent",
+  tailscale: "Tailscale",
+  dns: "DNS",
+  ping: "Ping",
+};
+
+export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode, onProbeNode, onVerifyNode, onDeleteNode }) {
   const [expanded, setExpanded] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -59,6 +67,7 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
   const [configForm, setConfigForm] = useState({ agent_url: "", notes: "", tags: "" });
   const [submitting, setSubmitting] = useState(false);
   const [probingId, setProbingId] = useState(null);
+  const [verifyingId, setVerifyingId] = useState(null);
 
   const onlineCount = nodes.filter((n) => n.status === "online").length;
   const filteredNodes = useMemo(() => {
@@ -178,6 +187,16 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
       await onProbeNode(id);
     } finally {
       setProbingId(null);
+    }
+  }
+
+  async function handleVerify(id) {
+    if (!onVerifyNode) return;
+    setVerifyingId(id);
+    try {
+      await onVerifyNode(id);
+    } finally {
+      setVerifyingId(null);
     }
   }
 
@@ -307,6 +326,21 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                 <div className="infra-detail-row">
                   <span className="infra-detail-label">Type</span>
                   <span>{node.type}</span>
+                </div>
+                <div className="infra-detail-row">
+                  <span className="infra-detail-label">Verified</span>
+                  {node.last_verified ? (
+                    <span>
+                      <span className="infra-verified-badge">
+                        {VERIFY_SOURCE_LABELS[node.verification_source] || node.verification_source || "unknown"}
+                      </span>
+                      <span className="muted" style={{ fontSize: "0.68rem", marginLeft: "6px" }}>
+                        {new Date(node.last_verified).toLocaleString()}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="muted" style={{ fontSize: "0.68rem" }}>Not yet verified</span>
+                  )}
                 </div>
                 {node.hostname && (
                   <div className="infra-detail-row">
@@ -465,6 +499,9 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                 <div className="button-row">
                   <button className="btn-ghost-sm" onClick={() => handleProbe(node.id)} disabled={probingId === node.id}>
                     {probingId === node.id ? "Probing..." : "Probe"}
+                  </button>
+                  <button className="btn-ghost-sm" onClick={() => handleVerify(node.id)} disabled={verifyingId === node.id}>
+                    {verifyingId === node.id ? "Verifying..." : "Verify"}
                   </button>
                   {node.id === "workstation" ? (
                     <button className="btn-ghost-sm" onClick={() => startConfigure(node)}>

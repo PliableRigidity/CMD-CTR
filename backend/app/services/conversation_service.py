@@ -67,6 +67,7 @@ class ConversationService:
         maps_service: MapsService | None = None,
         memory_service: MemoryService | None = None,
         event_service=None,
+        semantic_memory_service=None,
     ) -> None:
         self.model_name = CONVERSATION_MODEL
         self.web_service = web_service
@@ -75,6 +76,7 @@ class ConversationService:
         self.maps_service = maps_service
         self.memory_service = memory_service
         self.event_service = event_service
+        self.semantic_memory_service = semantic_memory_service
         self._pending_deletion: str | None = None
         self._pending_ssh: dict | None = None
 
@@ -88,6 +90,13 @@ class ConversationService:
         def _persist(answer: str) -> None:
             if self.memory_service:
                 self.memory_service.save_turn(request.session_id, request.query, answer, "conversation")
+            if self.semantic_memory_service:
+                import asyncio
+                asyncio.create_task(
+                    self.semantic_memory_service.embed_and_store(
+                        request.session_id, request.query, answer
+                    )
+                )
 
         memory_response = self._handle_memory_command(request)
         if memory_response is not None:
@@ -313,6 +322,159 @@ class ConversationService:
                 result = get_node_info(node_name)
                 await self._emit_tool("[TOOL] get_node_info", result["summary"], "info" if result["ok"] else "error")
                 return self._node_response("Node Info", self._render_node_info(result), result)
+
+            if name == "verify_node":
+                node_name = args.get("node", "").strip()
+                await self._emit_tool("[TOOL] verify_node", f"Verifying: {node_name}")
+                from backend.app.tools.node_tool import verify_node_by_name
+                result = await verify_node_by_name(node_name)
+                level = "info" if result["ok"] else "warning"
+                await self._emit_tool("[TOOL] verify_node", result["summary"], level)
+                return self._node_response(
+                    "Node Verified" if result["ok"] else "Verification Failed",
+                    self._render_verification(result),
+                    result,
+                )
+
+            if name == "refresh_nodes":
+                await self._emit_tool("[TOOL] refresh_nodes", "Verifying all registered nodes")
+                from backend.app.tools.node_tool import verify_all_nodes
+                result = await verify_all_nodes()
+                await self._emit_tool("[TOOL] refresh_nodes", result["summary"], "info")
+                return self._node_response("Node Verification", self._render_refresh(result), result)
+
+            if name == "get_node_telemetry":
+                node_name = args.get("node", "").strip()
+                label = node_name if node_name and node_name != "all" else "all nodes"
+                await self._emit_tool("[TOOL] get_node_telemetry", f"Reading telemetry: {label}")
+                from backend.app.tools.node_tool import get_node_telemetry
+                result = get_node_telemetry(node_name)
+                await self._emit_tool("[TOOL] get_node_telemetry", result["summary"], "info" if result["ok"] else "error")
+                return self._node_response("Node Telemetry", self._render_node_telemetry(result), result)
+
+            if name == "get_watch_alerts":
+                await self._emit_tool("[TOOL] get_watch_alerts", "Fetching active Watch Officer alerts")
+                from backend.app.tools.node_tool import get_watch_alerts
+                result = get_watch_alerts()
+                await self._emit_tool("[TOOL] get_watch_alerts", result["summary"], "info")
+                return self._node_response("Watch Officer", self._render_watch_alerts(result), result)
+
+            # ── Personal ops ──────────────────────────────────────────────────
+            if name == "set_reminder":
+                raw = args.get("raw", "").strip()
+                await self._emit_tool("[TOOL] set_reminder", f"Parsing reminder: {raw[:60]}")
+                from backend.app.tools.personal_tool import set_reminder
+                result = set_reminder(raw)
+                await self._emit_tool("[TOOL] set_reminder", result["summary"], "info" if result["ok"] else "error")
+                return self._personal_response("Reminder Set" if result["ok"] else "Reminder Error",
+                                               self._render_reminder_set(result), result)
+
+            if name == "list_reminders":
+                await self._emit_tool("[TOOL] list_reminders", "Fetching active reminders")
+                from backend.app.tools.personal_tool import list_reminders
+                result = list_reminders()
+                await self._emit_tool("[TOOL] list_reminders", result["summary"])
+                return self._personal_response("Reminders", self._render_reminder_list(result), result)
+
+            if name == "delete_reminder":
+                query = args.get("query", "").strip()
+                await self._emit_tool("[TOOL] delete_reminder", f"Deleting reminder: {query}")
+                from backend.app.tools.personal_tool import delete_reminder
+                result = delete_reminder(query)
+                await self._emit_tool("[TOOL] delete_reminder", result["summary"], "info" if result["ok"] else "warning")
+                answer = result["summary"] if result["ok"] else f"Reminder not found: {query}"
+                return self._personal_response("Reminder Deleted" if result["ok"] else "Not Found", answer, result)
+
+            if name == "complete_reminder":
+                query = args.get("query", "").strip()
+                await self._emit_tool("[TOOL] complete_reminder", f"Completing reminder: {query}")
+                from backend.app.tools.personal_tool import complete_reminder as _complete_reminder
+                result = _complete_reminder(query)
+                await self._emit_tool("[TOOL] complete_reminder", result["summary"], "info" if result["ok"] else "warning")
+                answer = result["summary"] if result["ok"] else f"Reminder not found: {query}"
+                return self._personal_response("Reminder Done" if result["ok"] else "Not Found", answer, result)
+
+            if name == "add_task":
+                title = args.get("title", "").strip()
+                project = args.get("project", "").strip()
+                await self._emit_tool("[TOOL] add_task", f"Adding task: {title}")
+                from backend.app.tools.personal_tool import add_task
+                result = add_task(title, project)
+                await self._emit_tool("[TOOL] add_task", result["summary"], "info" if result["ok"] else "error")
+                return self._personal_response("Task Added" if result["ok"] else "Task Error",
+                                               result["summary"], result)
+
+            if name == "list_tasks":
+                filter_val = args.get("filter", "pending")
+                await self._emit_tool("[TOOL] list_tasks", f"Fetching {filter_val} tasks")
+                from backend.app.tools.personal_tool import list_tasks
+                result = list_tasks(filter_val)
+                await self._emit_tool("[TOOL] list_tasks", result["summary"])
+                return self._personal_response("Tasks", self._render_task_list(result), result)
+
+            if name == "complete_task":
+                query = args.get("query", "").strip()
+                await self._emit_tool("[TOOL] complete_task", f"Completing task: {query}")
+                from backend.app.tools.personal_tool import complete_task
+                result = complete_task(query)
+                await self._emit_tool("[TOOL] complete_task", result["summary"], "info" if result["ok"] else "warning")
+                answer = result["summary"] if result["ok"] else f"Task not found: {query}"
+                return self._personal_response("Task Done" if result["ok"] else "Not Found", answer, result)
+
+            if name == "delete_task":
+                query = args.get("query", "").strip()
+                await self._emit_tool("[TOOL] delete_task", f"Deleting task: {query}")
+                from backend.app.tools.personal_tool import delete_task
+                result = delete_task(query)
+                await self._emit_tool("[TOOL] delete_task", result["summary"], "info" if result["ok"] else "warning")
+                answer = result["summary"] if result["ok"] else f"Task not found: {query}"
+                return self._personal_response("Task Deleted" if result["ok"] else "Not Found", answer, result)
+
+            if name == "get_calendar_today":
+                await self._emit_tool("[TOOL] get_calendar_today", "Fetching today's events")
+                from backend.app.tools.personal_tool import get_calendar_today
+                result = get_calendar_today()
+                await self._emit_tool("[TOOL] get_calendar_today", result["summary"])
+                return self._personal_response("Calendar — Today", self._render_calendar_events(result, "today"), result)
+
+            if name == "get_upcoming_events":
+                days = args.get("days", 7)
+                await self._emit_tool("[TOOL] get_upcoming_events", f"Fetching next {days} days")
+                from backend.app.tools.personal_tool import get_upcoming_events
+                result = get_upcoming_events(days)
+                await self._emit_tool("[TOOL] get_upcoming_events", result["summary"])
+                return self._personal_response(f"Calendar — Next {days} Days",
+                                               self._render_calendar_events(result, f"next {days} days"), result)
+
+            if name == "create_calendar_event":
+                raw = args.get("raw", "").strip()
+                await self._emit_tool("[TOOL] create_calendar_event", f"Creating event: {raw[:60]}")
+                from backend.app.tools.personal_tool import create_calendar_event
+                result = create_calendar_event(raw)
+                await self._emit_tool("[TOOL] create_calendar_event", result["summary"], "info" if result["ok"] else "error")
+                return self._personal_response("Event Created" if result["ok"] else "Event Error",
+                                               result["summary"], result)
+
+            if name == "delete_calendar_event":
+                query = args.get("query", "").strip()
+                await self._emit_tool("[TOOL] delete_calendar_event", f"Deleting event: {query}")
+                from backend.app.tools.personal_tool import delete_calendar_event
+                result = delete_calendar_event(query)
+                await self._emit_tool("[TOOL] delete_calendar_event", result["summary"], "info" if result["ok"] else "warning")
+                answer = result["summary"] if result["ok"] else f"Event not found: {query}"
+                return self._personal_response("Event Deleted" if result["ok"] else "Not Found", answer, result)
+
+            if name == "semantic_search":
+                search_query = args.get("query", "").strip()
+                await self._emit_tool("[TOOL] semantic_search", f"Searching memory: {search_query[:60]}")
+                from backend.app.tools.memory_tool import semantic_search
+                result = await semantic_search(search_query)
+                await self._emit_tool("[TOOL] semantic_search", result["summary"])
+                return self._personal_response(
+                    "Memory Search",
+                    self._render_semantic_results(result, search_query),
+                    result,
+                )
 
             if name == "update_node_ip":
                 node_name = args.get("node", "").strip()
@@ -659,6 +821,254 @@ class ConversationService:
             parts.append(f"last error: {d['probe_error']}")
         return ", ".join(parts) + "."
 
+    def _render_node_telemetry(self, result: dict) -> str:
+        if not result["ok"]:
+            return result.get("error") or f"No telemetry found for {result.get('node', 'that node')}."
+        d = result["data"]
+
+        # ── All-nodes view ────────────────────────────────────────────────────
+        if "nodes" in d:
+            nodes = d["nodes"]
+            if not nodes:
+                return "No nodes in registry."
+            # Sort: nodes with temperature first (descending), rest after
+            with_temp = sorted(
+                [n for n in nodes if n.get("temperature") is not None],
+                key=lambda n: n["temperature"],
+                reverse=True,
+            )
+            without_temp = [n for n in nodes if n.get("temperature") is None]
+            ordered = with_temp + without_temp
+            lines = [f"Infrastructure Telemetry — {len(nodes)} node{'s' if len(nodes) != 1 else ''}\n"]
+            for n in ordered:
+                status = n["status"].upper()
+                metrics = []
+                if n.get("cpu") is not None:
+                    metrics.append(f"CPU {n['cpu']:.0f}%")
+                if n.get("ram") is not None:
+                    metrics.append(f"RAM {n['ram']:.0f}%")
+                if n.get("disk") is not None:
+                    metrics.append(f"Disk {n['disk']:.0f}%")
+                if n.get("temperature") is not None:
+                    metrics.append(f"{n['temperature']:.0f}°C")
+                metric_str = "  " + " · ".join(metrics) if metrics else "  no telemetry"
+                lines.append(f"  {n['name']:<20} {status:<10}{metric_str}")
+            return "\n".join(lines)
+
+        # ── Single-node view ──────────────────────────────────────────────────
+        name = d["name"]
+        status = d["status"].capitalize()
+        has_metrics = any(d.get(k) is not None for k in ("cpu", "ram", "disk", "temperature"))
+
+        lines = [name.upper(), "", f"Status: {status}"]
+
+        if has_metrics:
+            lines.append("")
+            if d.get("cpu") is not None:
+                lines.append(f"CPU:         {d['cpu']:.0f}%")
+            if d.get("ram") is not None:
+                lines.append(f"RAM:         {d['ram']:.0f}%")
+            if d.get("disk") is not None:
+                lines.append(f"Disk:        {d['disk']:.0f}%")
+            if d.get("temperature") is not None:
+                lines.append(f"Temperature: {d['temperature']:.0f}°C")
+            if d.get("uptime") is not None:
+                h = d["uptime"] // 3600
+                m = (d["uptime"] % 3600) // 60
+                lines.append(f"Uptime:      {h}h {m}m")
+        else:
+            lines.append("")
+            lines.append("No telemetry received yet.")
+            if d.get("agent_url"):
+                lines.append("Silvia-Agent is configured — telemetry will appear after the next poll (30s).")
+            else:
+                lines.append("Configure an agent_url on this node to enable live telemetry from Silvia-Agent.")
+
+        lines.append("")
+        if d.get("last_seen"):
+            try:
+                from datetime import datetime
+                ts = datetime.fromisoformat(d["last_seen"])
+                lines.append(f"Last Seen: {ts.strftime('%Y-%m-%d %H:%M:%S')}")
+            except Exception:
+                lines.append(f"Last Seen: {d['last_seen']}")
+        elif d.get("last_probe_at"):
+            try:
+                from datetime import datetime
+                ts = datetime.fromisoformat(d["last_probe_at"])
+                lines.append(f"Last Probe: {ts.strftime('%Y-%m-%d %H:%M:%S')}")
+            except Exception:
+                lines.append(f"Last Probe: {d['last_probe_at']}")
+        lines.append(f"Source:    {'Silvia-Agent' if d.get('agent_url') else 'Node Probe'}")
+
+        return "\n".join(lines)
+
+    def _render_watch_alerts(self, result: dict) -> str:
+        d = result["data"]
+        alerts = d["alerts"]
+        if not alerts:
+            return "Watch Officer: All clear — no active alerts."
+        _CAT = {"infra": "OPS", "intel": "INTEL", "mission": "OPS", "system": "SYS", "security": "SEC"}
+        count = len(alerts)
+        lines = [f"Watch Officer — {count} active alert{'s' if count != 1 else ''}\n"]
+        for a in alerts:
+            cat = _CAT.get(a["category"], a["category"].upper())
+            sev = a["severity"].upper()
+            ts = ""
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(a["created_at"])
+                ts = f"  {dt.strftime('%H:%M')}"
+            except Exception:
+                pass
+            lines.append(f"  [{cat}] {a['message']}{ts}  ({sev})")
+        return "\n".join(lines)
+
+    def _personal_response(self, title: str, answer: str, result: dict) -> AssistantResponse:
+        return AssistantResponse(
+            mode="conversation",
+            title=title,
+            answer=answer,
+            confidence=0.97,
+            reasoning=f"Personal ops tool: {result['tool']}",
+            processing_time_ms=0,
+            sources=[],
+            agents=[AgentStatus(
+                name="Personal Ops",
+                role="assistant",
+                state="complete",
+                confidence=97,
+                summary=result["summary"],
+            )],
+            logs=[CommandLogEntry(
+                timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                title=title,
+                detail=result["summary"],
+                level="info" if result["ok"] else "error",
+            )],
+            payload={"tool_result": result, "speech_text": sanitize_for_speech(answer)},
+        )
+
+    def _render_reminder_set(self, result: dict) -> str:
+        if not result["ok"]:
+            return result.get("error") or result["summary"]
+        d = result["data"]
+        recurrence = d["recurrence"]
+        label = d["when_label"]
+        if recurrence == "once":
+            return f"Reminder set for {label}: '{d['message']}'"
+        return f"Recurring reminder ({label}): '{d['message']}'"
+
+    def _render_reminder_list(self, result: dict) -> str:
+        d = result["data"]
+        reminders = d["reminders"]
+        if not reminders:
+            return "No active reminders."
+        lines = [f"Reminders — {len(reminders)} active\n"]
+        for r in reminders:
+            rec = r["recurrence"]
+            rec_label = "" if rec == "once" else f"  [{rec.replace('weekly:', 'weekly ').replace('monthly:', 'monthly ')}]"
+            lines.append(f"  {r['when_label']}{rec_label}  — {r['message']}")
+        return "\n".join(lines)
+
+    def _render_task_list(self, result: dict) -> str:
+        d = result["data"]
+        tasks = d["tasks"]
+        filter_val = d.get("filter", "pending")
+        if not tasks:
+            label = "pending" if filter_val == "pending" else filter_val
+            return f"No {label} tasks."
+        # Group by project
+        by_project: dict[str, list] = {}
+        for t in tasks:
+            key = t["project"] or "—"
+            by_project.setdefault(key, []).append(t)
+        lines = [f"Tasks — {len(tasks)} {filter_val}\n"]
+        for proj, proj_tasks in sorted(by_project.items()):
+            if len(by_project) > 1:
+                lines.append(f"  [{proj}]")
+            for t in proj_tasks:
+                tick = "✓" if t["status"] == "done" else "·"
+                prio = f" ({t['priority']})" if t["priority"] != "normal" else ""
+                lines.append(f"    {tick} {t['title']}{prio}")
+        return "\n".join(lines)
+
+    def _render_calendar_events(self, result: dict, label: str) -> str:
+        d = result["data"]
+        events = d["events"]
+        if not events:
+            return f"No events {label}."
+        lines = [f"Calendar — {label} ({len(events)} event{'s' if len(events) != 1 else ''})\n"]
+        for e in events:
+            try:
+                from datetime import datetime
+                from backend.app.tools.personal_tool import _utc_to_local, _fmt_datetime_win
+                dt = _utc_to_local(e["start_at"])
+                time_str = _fmt_datetime_win(dt)
+            except Exception:
+                time_str = e["start_at"]
+            loc = f"  @ {e['location']}" if e.get("location") else ""
+            lines.append(f"  {time_str}  {e['title']}{loc}")
+        return "\n".join(lines)
+
+    def _render_verification(self, result: dict) -> str:
+        if not result["ok"]:
+            d = result.get("data") or {}
+            node = result.get("node", "Node")
+            reason = d.get("error") or result.get("error") or "All verification methods failed."
+            return f"{node} — unreachable.\n\n{reason}"
+        d = result["data"]
+        source_labels = {
+            "local": "Local machine",
+            "silvia-agent": "Silvia-Agent",
+            "tailscale": "Tailscale",
+            "dns": "DNS resolution",
+            "ping": "Direct ping",
+        }
+        source = source_labels.get(d.get("verification_source", ""), d.get("verification_source", "unknown"))
+        lat = d.get("latency_ms")
+        lat_str = f" · {lat:.0f}ms" if lat and lat > 0.1 else ""
+        try:
+            from datetime import datetime
+            ts = datetime.fromisoformat(d["last_verified"])
+            when = ts.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            when = d.get("last_verified", "now")
+        return (
+            f"{d['name'].upper()}\n\n"
+            f"Status:  Online\n"
+            f"Method:  {source}{lat_str}\n"
+            f"Verified: {when}\n\n"
+            f"Registry updated."
+        )
+
+    def _render_refresh(self, result: dict) -> str:
+        d = result["data"]
+        nodes = d.get("results", [])
+        total = d["total"]
+        verified_count = d["verified_count"]
+        failed_count = d["failed_count"]
+
+        header = f"Node Verification — {verified_count}/{total} online\n"
+        lines = [header]
+        source_labels = {
+            "local": "local",
+            "silvia-agent": "agent",
+            "tailscale": "tailscale",
+            "dns": "dns",
+            "ping": "ping",
+        }
+        for n in nodes:
+            status = "ONLINE" if n.get("status") == "online" else "OFFLINE"
+            src = source_labels.get(n.get("verification_source", ""), n.get("verification_source") or "—")
+            lat = n.get("latency_ms")
+            lat_str = f"  {lat:.0f}ms" if lat and lat > 0.1 else ""
+            lines.append(f"  {n['name']:<20} {status:<10} via {src}{lat_str}")
+
+        if failed_count:
+            lines.append(f"\n{failed_count} node{'s' if failed_count != 1 else ''} unreachable.")
+        return "\n".join(lines)
+
     def _system_response(self, title: str, answer: str, speech: str, result: dict) -> AssistantResponse:
         return AssistantResponse(
             mode="conversation",
@@ -823,6 +1233,24 @@ class ConversationService:
             speech = f"Command exited with code {rc}. {first_line}" if first_line else f"Command failed with exit code {rc}."
         return answer, speech
 
+    def _render_semantic_results(self, result: dict, query: str) -> str:
+        results = result["data"].get("results", [])
+        if not results:
+            return f"No past conversations found about '{query}'."
+        lines = [f"Memory Search — {len(results)} result{'s' if len(results) != 1 else ''} for '{query}'\n"]
+        for i, r in enumerate(results, 1):
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(r["created_at"])
+                when = dt.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                when = r.get("created_at", "")[:16]
+            sim_pct = int(r.get("similarity", 0) * 100)
+            lines.append(f"  [{i}] {when}  ({sim_pct}% match)")
+            lines.append(f"      You: {r['user_msg'][:100]}")
+            lines.append(f"      SILVIA: {r['assistant_reply'][:120]}")
+        return "\n".join(lines)
+
     def _simple_response(self, title: str, answer: str) -> AssistantResponse:
         return AssistantResponse(
             mode="conversation",
@@ -914,8 +1342,28 @@ class ConversationService:
             logger.warning("Grounded generation failed: %s", exc)
         return self._fallback_source_summary(query, sources)
 
+    async def _enrich_with_memory(self, query: str) -> str:
+        """Return a memory context block to prepend to the system prompt, or ''."""
+        if not self.semantic_memory_service:
+            return ""
+        try:
+            results = await self.semantic_memory_service.search(query, top_k=3, min_similarity=0.60)
+            if not results:
+                return ""
+            lines = ["Relevant past conversations (for context only — do not cite directly):"]
+            for r in results:
+                lines.append(f"- User asked: {r['user_msg'][:120]}")
+                lines.append(f"  SILVIA said: {r['assistant_reply'][:120]}")
+            return "\n".join(lines)
+        except Exception:
+            return ""
+
     async def _generate_response(self, query: str, history: list[dict]) -> str:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        memory_ctx = await self._enrich_with_memory(query)
+        system_content = SYSTEM_PROMPT
+        if memory_ctx:
+            system_content = SYSTEM_PROMPT + "\n\n" + memory_ctx
+        messages = [{"role": "system", "content": system_content}]
         messages.extend(history)
         messages.append({"role": "user", "content": query})
         payload = {
@@ -946,6 +1394,13 @@ class ConversationService:
     def _persist_turn(self, request: AssistantRequest, answer: str) -> None:
         if self.memory_service:
             self.memory_service.save_turn(request.session_id, request.query, answer, "conversation")
+        if self.semantic_memory_service:
+            import asyncio
+            asyncio.create_task(
+                self.semantic_memory_service.embed_and_store(
+                    request.session_id, request.query, answer
+                )
+            )
 
     async def _generate_response_stream(self, query: str, history: list[dict]):
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]

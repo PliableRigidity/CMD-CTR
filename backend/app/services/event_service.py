@@ -50,3 +50,14 @@ class EventService:
         except RuntimeError:
             return
         loop.create_task(self.emit(title=title, detail=detail, level=level))
+
+    async def emit_ws_only(self, data: dict) -> None:
+        """Send a raw dict to all connected WebSockets without adding to log history."""
+        stale: list[WebSocket] = []
+        for connection in list(self._connections):
+            try:
+                await connection.send_json(data)
+            except Exception:
+                stale.append(connection)
+        for connection in stale:
+            self._connections.discard(connection)

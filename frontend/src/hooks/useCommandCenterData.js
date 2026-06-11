@@ -21,6 +21,7 @@ import {
   mediaPrevious,
   openAppAction,
   probeNode,
+  verifyNode,
   sendChatStream,
   sendDecision,
   setAudioVolume,
@@ -132,6 +133,38 @@ export function useCommandCenterData() {
       socket.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
+          if (parsed.type === "node_telemetry") {
+            setNodes((current) =>
+              current.map((n) =>
+                n.id === parsed.node_id
+                  ? {
+                      ...n,
+                      cpu: parsed.cpu,
+                      ram: parsed.ram,
+                      disk: parsed.disk,
+                      temperature: parsed.temperature,
+                      uptime: parsed.uptime,
+                      status: "online",
+                      last_seen: parsed.timestamp,
+                    }
+                  : n
+              )
+            );
+            return;
+          }
+          if (parsed.type === "watch_alert") {
+            setWatchAlerts((current) => {
+              if (current.some((a) => a.id === parsed.alert.id)) return current;
+              return [parsed.alert, ...current];
+            });
+            return;
+          }
+          if (parsed.type === "watch_resolve") {
+            setWatchAlerts((current) =>
+              current.filter((a) => a.rule_key !== parsed.rule_key)
+            );
+            return;
+          }
           setLogs((current) => [...current.slice(-99), parsed]);
         } catch {
           // ignore malformed frames
@@ -462,6 +495,17 @@ export function useCommandCenterData() {
     }
   }
 
+  async function verifyNodeById(nodeId) {
+    try {
+      const next = await verifyNode(nodeId);
+      setNodes((current) => current.map((node) => (node.id === nodeId ? next : node)));
+      return next;
+    } catch (verifyError) {
+      setError(verifyError.message || "Failed to verify node.");
+      throw verifyError;
+    }
+  }
+
   async function dismissAlert(alertId) {
     try {
       await dismissWatchAlert(alertId);
@@ -499,6 +543,7 @@ export function useCommandCenterData() {
     addNode,
     saveNode,
     probeNodeById,
+    verifyNodeById,
     removeNode,
     dismissAlert,
   };

@@ -60,6 +60,7 @@ export default function AppShell(props) {
             onAddNode={props.addNode}
             onSaveNode={props.saveNode}
             onProbeNode={props.probeNodeById}
+            onVerifyNode={props.verifyNodeById}
             onDeleteNode={props.removeNode}
           />
           <ActionShortcutsPanel
