@@ -19,15 +19,26 @@ logger = logging.getLogger(__name__)
 _EXECUTION_MODELS = ["hermes3", "qwen2.5:7b", "qwen2.5:3b"]
 
 _HERMES_SYSTEM = (
-    "You are SILVIA's execution engine. You are given a task and a set of tools. "
-    "Your job is to execute the task by calling the appropriate tools in the right order. "
-    "Always call a tool when you need information — never guess. "
-    "When you have gathered all needed information, respond with a clear, direct answer. "
-    "Be concise. Do not explain your reasoning step by step — just execute and answer."
+    "You are SILVIA's execution engine. Execute tasks by calling tools in the correct order.\n"
+    "STRICT RULES:\n"
+    "- NEVER guess, infer, or assume any fact about nodes, devices, or systems. Always call a tool.\n"
+    "- NEVER conclude a node is offline or unreachable without calling a tool first.\n"
+    "- For any query involving node status, health, or telemetry: call get_node_telemetry DIRECTLY. "
+    "It returns status AND metrics in one call. Do not call get_node_info first as a precondition.\n"
+    "- If get_node_telemetry returns data, the node is reachable. Present the data.\n"
+    "- Only call get_node_info when the user asks specifically for IP/network details, not for status checks.\n"
+    "- When you have all needed results, give a concise direct answer. No step-by-step narration."
 )
 
 _available_model: str | None = None
 _checked: bool = False
+
+
+def reset_model_cache() -> None:
+    """Force re-detection of available execution model on next call."""
+    global _available_model, _checked
+    _available_model = None
+    _checked = False
 
 
 async def get_execution_model() -> str | None:
