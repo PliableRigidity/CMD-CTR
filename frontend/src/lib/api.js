@@ -119,6 +119,18 @@ export async function fetchStockQuote(symbol) {
   return readJson(await fetch(`${API_BASE}/world/stock/${encodeURIComponent(symbol)}`));
 }
 
+export async function fetchEarthquakes() {
+  return readJson(await fetch(`${API_BASE}/world/earthquakes`));
+}
+
+export async function fetchWeather() {
+  return readJson(await fetch(`${API_BASE}/world/weather`));
+}
+
+export async function fetchMarkets() {
+  return readJson(await fetch(`${API_BASE}/world/markets`));
+}
+
 export async function fetchWorldEvents({ live = true, category, country } = {}) {
   const query = new URLSearchParams();
   if (live) query.set("live", "true");

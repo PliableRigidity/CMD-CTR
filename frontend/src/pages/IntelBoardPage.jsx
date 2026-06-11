@@ -4,7 +4,7 @@ import GlobeComponent from "../components/globe/GlobeComponent";
 import { getInitialState, startSimulation } from "../data/mockEngine";
 import { maritimeRoutes } from "../data/maritimeRoutes";
 import { publicCameras } from "../data/cameras";
-import { fetchWorldEvents, fetchStockQuote } from "../lib/api";
+import { fetchWorldEvents, fetchStockQuote, fetchEarthquakes, fetchWeather, fetchMarkets } from "../lib/api";
 
 // ── Market Ticker Bar ──────────────────────────────────────────────────────
 function MarketTicker({ markets }) {
@@ -483,6 +483,9 @@ export default function IntelBoardPage() {
   const [sidebarTab, setSidebarTab] = useState("intel"); // "intel" | "sim"
   const [categoryFilter, setCategoryFilter] = useState(null);
   const [stockPanelOpen, setStockPanelOpen] = useState(true);
+  const [liveEarthquakes, setLiveEarthquakes] = useState([]);
+  const [liveWeather,     setLiveWeather]     = useState([]);
+  const [liveMarkets,     setLiveMarkets]     = useState(null);
   const [clock, setClock] = useState(new Date());
   const stopSimRef = useRef(null);
 
@@ -520,6 +523,30 @@ export default function IntelBoardPage() {
     return () => clearTimeout(timeout);
   }, []);
 
+  // Live earthquakes — USGS, every 5 min
+  useEffect(() => {
+    const load = () => fetchEarthquakes().then(setLiveEarthquakes).catch(() => {});
+    load();
+    const id = setInterval(load, 300_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Live weather — OpenWeatherMap, every 10 min
+  useEffect(() => {
+    const load = () => fetchWeather().then(setLiveWeather).catch(() => {});
+    load();
+    const id = setInterval(load, 600_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Live markets — Yahoo Finance, every 60s
+  useEffect(() => {
+    const load = () => fetchMarkets().then(setLiveMarkets).catch(() => {});
+    load();
+    const id = setInterval(load, 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   // Clock
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000);
@@ -533,7 +560,10 @@ export default function IntelBoardPage() {
     if (cam) setSelectedEvent({ type: "camera", data: cam });
   };
 
-  const markets = simData.markets || {};
+  // Prefer live data; fall back to simulation for each layer
+  const earthquakes = liveEarthquakes.length > 0 ? liveEarthquakes : simData.earthquakes;
+  const weather     = liveWeather.length > 0     ? liveWeather     : simData.weather;
+  const markets     = liveMarkets                ? liveMarkets     : (simData.markets || {});
 
   return (
     <div className="relative w-screen h-screen bg-slate-950 overflow-hidden font-mono">
@@ -556,7 +586,7 @@ export default function IntelBoardPage() {
           <StatsBadge icon="✈️" label="Flights" value={simData.flights?.length} color="blue" />
           <StatsBadge icon="🚢" label="Ships" value={simData.ships?.length} color="cyan" />
           <StatsBadge icon="⚠️" label="Threats" value={simData.threats?.length} color="red" />
-          <StatsBadge icon="🌍" label="Seismic" value={simData.earthquakes?.length} color="amber" />
+          <StatsBadge icon="🌍" label={liveEarthquakes.length > 0 ? "Seismic ●" : "Seismic"} value={earthquakes.length} color="amber" />
           <StatsBadge icon="📡" label="Live Events" value={worldEvents.length} color="teal" />
         </div>
 
@@ -576,9 +606,9 @@ export default function IntelBoardPage() {
         <GlobeComponent
           threats={simData.threats}
           cameras={publicCameras}
-          earthquakes={simData.earthquakes}
+          earthquakes={earthquakes}
           flights={simData.flights}
-          weather={simData.weather}
+          weather={weather}
           lightning={simData.lightning}
           ships={simData.ships}
           volcanoes={simData.volcanoes}
@@ -693,7 +723,7 @@ export default function IntelBoardPage() {
             ) : (
               <SimFeed
                 threats={simData.threats}
-                earthquakes={simData.earthquakes}
+                earthquakes={earthquakes}
                 radiation={simData.radiation}
               />
             )}
@@ -710,8 +740,12 @@ export default function IntelBoardPage() {
               </>
             ) : (
               <>
-                <span>⬤ LIVE SIMULATION</span>
-                <span>⬤ {simData.threats?.length ?? 0} THREATS</span>
+                <span className={liveEarthquakes.length > 0 ? "text-teal-700" : ""}>
+                  {liveEarthquakes.length > 0 ? "● SEISMIC LIVE" : "○ SIM SEISMIC"}
+                </span>
+                <span className={liveWeather.length > 0 ? "text-teal-700" : ""}>
+                  {liveWeather.length > 0 ? "● WEATHER LIVE" : "○ SIM WEATHER"}
+                </span>
               </>
             )}
           </div>
