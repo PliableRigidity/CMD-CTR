@@ -34,6 +34,35 @@ export async function sendChat(payload) {
   );
 }
 
+export async function sendChatStream(payload, onChunk) {
+  const response = await fetch(`${API_BASE}/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(await response.text());
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const raw = line.slice(6).trim();
+        if (raw) {
+          try { onChunk(JSON.parse(raw)); } catch { /* skip malformed */ }
+        }
+      }
+    }
+  }
+}
+
 export async function sendDecision(payload) {
   return readJson(
     await fetch(`${API_BASE}/decision`, {

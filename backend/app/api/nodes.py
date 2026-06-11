@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from backend.app.models.nodes import NODE_TYPES, Node, NodeCreate, NodeMetricsUpdate, NodeUpdate
@@ -27,7 +29,8 @@ async def get_node_types():
 
 @router.post("/nodes", response_model=Node, status_code=201)
 async def create_node(data: NodeCreate, svc: NodeService = Depends(_get_service)):
-    return svc.create_node(data)
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, svc.create_node, data)
 
 
 @router.put("/nodes/{node_id}", response_model=Node)
@@ -56,7 +59,8 @@ async def update_metrics(
 
 @router.post("/nodes/{node_id}/probe", response_model=Node)
 async def probe_node(node_id: str, svc: NodeService = Depends(_get_service)):
-    node = svc.probe_node(node_id)
+    loop = asyncio.get_event_loop()
+    node = await loop.run_in_executor(None, svc.probe_node, node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
     return node

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import socket
@@ -12,6 +13,12 @@ from datetime import datetime, timezone
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Optional
+
+try:
+    import psutil as _psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    _HAS_PSUTIL = False
 
 from backend.app.models.nodes import Node, NodeCreate, NodeMetricsUpdate, NodeUpdate
 
@@ -77,7 +84,7 @@ def _init_db() -> None:
                     "Workstation",
                     "workstation",
                     "local",
-                    "online",
+                    "unknown",
                     '["core"]',
                     "Primary local node — SILVIA host machine",
                 ),
@@ -145,10 +152,10 @@ class NodeService:
                 ),
             )
             conn.commit()
-            self.probe_node(node_id)
-            return self.get_node(node_id)
         finally:
             conn.close()
+        self.probe_node(node_id)
+        return self.get_node(node_id)
 
     def update_metrics(self, node_id: str, metrics: NodeMetricsUpdate) -> Optional[Node]:
         updates = {k: v for k, v in metrics.model_dump().items() if v is not None}
@@ -186,6 +193,9 @@ class NodeService:
         if not node:
             return None
 
+        if node.hostname == "local" or node.type == "workstation":
+            return self._probe_local(node_id)
+
         probe = self._probe_targets(node)
         conn = _conn()
         try:
@@ -207,6 +217,40 @@ class NodeService:
                     probe["checked_at"] if probe["status"] == "online" else None,
                     node_id,
                 ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return self.get_node(node_id)
+
+    def probe_all_nodes(self) -> list[Node]:
+        nodes = self.list_nodes()
+        results = []
+        for node in nodes:
+            result = self.probe_node(node.id)
+            if result:
+                results.append(result)
+        return results
+
+    def _probe_local(self, node_id: str) -> Optional[Node]:
+        checked_at = _utc_now()
+        cpu = ram = disk = None
+        if _HAS_PSUTIL:
+            try:
+                cpu = _psutil.cpu_percent(interval=0.1)
+                ram = _psutil.virtual_memory().percent
+                drive = os.path.splitdrive(os.getcwd())[0] or "C:"
+                disk = _psutil.disk_usage(drive + "\\").percent
+            except Exception:
+                pass
+        conn = _conn()
+        try:
+            conn.execute(
+                """UPDATE nodes SET status='online', last_probe_at=?, last_seen=?,
+                   latency_ms=0.1, resolved_ip='127.0.0.1', hostname_valid=1,
+                   tailscale_reachable=NULL, probe_error=NULL, cpu=?, ram=?, disk=?
+                   WHERE id=?""",
+                (checked_at, checked_at, cpu, ram, disk, node_id),
             )
             conn.commit()
         finally:

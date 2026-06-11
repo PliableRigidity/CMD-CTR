@@ -15,6 +15,9 @@ const getWeatherIcon = (cond) => {
 const tooltip = (html, color = '#22d3ee') =>
     `<div style="background:rgba(15,23,42,0.95);border:1px solid ${color}44;padding:6px 10px;border-radius:6px;color:#e2e8f0;font-size:11px;font-weight:600;backdrop-filter:blur(8px);box-shadow:0 4px 12px rgba(0,0,0,.5);white-space:nowrap;">${html}</div>`;
 
+const getEventLat = (event) => event.lat ?? event.latitude;
+const getEventLng = (event) => event.lng ?? event.longitude;
+
 const GlobeComponent = ({
     threats = [], cameras = [], onCameraSelect, onEventSelect,
     earthquakes = [], flights = [], weather = [],
@@ -68,7 +71,9 @@ const GlobeComponent = ({
         ...lightning.map(l => ({ lat: l.lat, lng: l.lng, maxR: 1.5, color: '#fef08a', prop: 5, rep: 400 })),
         ...radiation.filter(r => r.alert).map(r => ({ lat: r.lat, lng: r.lng, maxR: 5, color: '#c026d3', prop: 0.5, rep: 2000 })),
         // CMD-CTR real world events — teal rings
-        ...worldEvents.filter(e => e.lat && e.lng).map(e => ({ lat: e.lat, lng: e.lng, maxR: 4, color: '#14b8a6', prop: 1.2, rep: 1200 })),
+        ...worldEvents
+            .filter(e => getEventLat(e) != null && getEventLng(e) != null)
+            .map(e => ({ lat: getEventLat(e), lng: getEventLng(e), maxR: 4, color: '#14b8a6', prop: 1.2, rep: 1200 })),
     ];
 
     // --- Points ---
@@ -78,7 +83,9 @@ const GlobeComponent = ({
         ...flights.map(f => ({ lat: f.lat, lng: f.lng, size: 0.1, color: '#38bdf8', alt: 0.05 + (f.alt ? f.alt / 100000 : 0), _type: 'flight', _data: f })),
         ...ships.map(s => ({ lat: s.lat, lng: s.lng, size: 0.05, color: '#93c5fd', alt: 0, _type: 'ship', _data: s })),
         // CMD-CTR real world events as teal dots
-        ...worldEvents.filter(e => e.lat && e.lng).map(e => ({ lat: e.lat, lng: e.lng, size: 0.25, color: '#2dd4bf', alt: 0.02, _type: 'worldEvent', _data: e })),
+        ...worldEvents
+            .filter(e => getEventLat(e) != null && getEventLng(e) != null)
+            .map(e => ({ lat: getEventLat(e), lng: getEventLng(e), size: 0.25, color: '#2dd4bf', alt: 0.02, _type: 'worldEvent', _data: e })),
     ];
 
     // --- HTML overlays ---

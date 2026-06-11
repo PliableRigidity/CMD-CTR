@@ -25,3 +25,6 @@ class WorldEvent(BaseModel):
     final_rank: float | None = None
     board_priority: str | None = None
     badge: str | None = None
+    assessment: str | None = None
+    prediction: str | None = None
+    recommendation: str | None = None

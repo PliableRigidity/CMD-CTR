@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import GlobeComponent from "../components/globe/GlobeComponent";
 import { getInitialState, startSimulation } from "../data/mockEngine";
@@ -111,32 +111,159 @@ function EventPanel({ event, onClose }) {
         {type === "worldEvent" && <>
           <p><span className="text-slate-500">Category:</span> {data.category}</p>
           {data.primary_country && <p><span className="text-slate-500">Country:</span> {data.primary_country}</p>}
-          {data.snippet && <p className="mt-1 text-slate-500 leading-relaxed">{data.snippet?.slice(0, 180)}</p>}
-          {data.url && <a href={data.url} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Open source ↗</a>}
+          {(data.summary || data.snippet) && <p className="mt-1 text-slate-500 leading-relaxed">{(data.summary || data.snippet)?.slice(0, 180)}</p>}
+          {data.assessment && <p><span className="text-slate-500">Assessment:</span> {data.assessment}</p>}
+          {data.prediction && <p><span className="text-slate-500">Prediction:</span> {data.prediction}</p>}
+          {data.recommendation && <p><span className="text-slate-500">Recommendation:</span> <span className="text-amber-400">{data.recommendation}</span></p>}
+          {(data.source_url || data.url) && <a href={data.source_url || data.url} target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Open source ↗</a>}
         </>}
       </div>
     </div>
   );
 }
 
-// ── Threat Feed Sidebar ────────────────────────────────────────────────────
-function ThreatFeed({ threats, worldEvents }) {
-  const combined = [
-    ...threats.slice(0, 5).map(t => ({ key: t.id, icon: "⚠️", text: t.headline, sub: t.region, color: "text-orange-400" })),
-    ...worldEvents.slice(0, 5).map(e => ({ key: e.id, icon: "📡", text: e.title, sub: e.primary_country || e.category, color: "text-teal-400" })),
-  ].slice(0, 8);
+// ── Priority colour map ────────────────────────────────────────────────────
+const PRIORITY_STYLE = {
+  critical: { border: "border-red-500/50",    label: "text-red-400",    bg: "bg-red-950/20"    },
+  high:     { border: "border-orange-500/40", label: "text-orange-400", bg: "bg-orange-950/20" },
+  medium:   { border: "border-amber-500/30",  label: "text-amber-400",  bg: "bg-amber-950/10"  },
+  low:      { border: "border-slate-700/40",  label: "text-slate-400",  bg: ""                 },
+};
+
+// ── World Intel Feed with O/A/P cards ─────────────────────────────────────
+function WorldIntelFeed({ events, onSelectGlobe }) {
+  const [expandedId, setExpandedId] = useState(null);
+  const shown = events.slice(0, 15);
+  const withAssessment = shown.filter(e => e.assessment).length;
 
   return (
-    <div className="flex flex-col gap-1 overflow-y-auto max-h-64">
-      {combined.map(item => (
-        <div key={item.key} className="flex gap-2 p-2 rounded bg-slate-800/60 border border-slate-700/40 text-xs">
-          <span>{item.icon}</span>
-          <div>
-            <p className={`font-semibold ${item.color} leading-tight`}>{item.text}</p>
-            {item.sub && <p className="text-slate-500 text-[10px] mt-0.5">{item.sub}</p>}
+    <div className="flex flex-col gap-1.5">
+      <div className="flex items-center justify-between mb-1 text-[9px] text-slate-500">
+        <span>{shown.length} EVENTS</span>
+        <span>{withAssessment}/{shown.length} ASSESSED</span>
+      </div>
+
+      {shown.map(ev => {
+        const isExpanded = expandedId === ev.id;
+        const p = PRIORITY_STYLE[ev.board_priority] || PRIORITY_STYLE.low;
+        const country = ev.primary_country || ev.country || "Global";
+
+        return (
+          <div
+            key={ev.id}
+            className={`rounded border ${p.border} ${p.bg} cursor-pointer transition-all duration-150 hover:brightness-110`}
+            onClick={() => {
+              setExpandedId(isExpanded ? null : ev.id);
+              onSelectGlobe?.(ev);
+            }}
+          >
+            {/* ── Card header ── */}
+            <div className="p-2">
+              <div className="flex items-center justify-between gap-1 mb-1">
+                <span className={`text-[8px] font-bold uppercase tracking-widest ${p.label}`}>
+                  {(ev.board_priority || "LOW").toUpperCase()}
+                  {ev.badge ? ` · ${ev.badge}` : ""}
+                </span>
+                <span className="text-[9px] text-slate-500 tabular-nums">
+                  {country} · {ev.category || "general"}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-100 leading-snug font-medium line-clamp-2">{ev.title}</p>
+              {!isExpanded && ev.assessment && (
+                <p className="text-[9px] text-cyan-400/70 leading-snug mt-1 line-clamp-1 italic">{ev.assessment}</p>
+              )}
+            </div>
+
+            {/* ── Expanded O/A/P body ── */}
+            {isExpanded && (
+              <div className="px-2 pb-2 pt-1 border-t border-slate-700/30 space-y-2">
+                <div>
+                  <p className="text-[8px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">Observation</p>
+                  <p className="text-[10px] text-slate-300 leading-snug">{ev.title}</p>
+                </div>
+                <div>
+                  <p className="text-[8px] font-bold text-cyan-500/80 uppercase tracking-wider mb-0.5">Assessment · SILVIA</p>
+                  {ev.assessment
+                    ? <p className="text-[10px] text-cyan-300/80 leading-snug">{ev.assessment}</p>
+                    : <p className="text-[10px] text-slate-600 italic">Analyzing — check back shortly</p>
+                  }
+                </div>
+                <div>
+                  <p className="text-[8px] font-bold text-cyan-500/80 uppercase tracking-wider mb-0.5">Prediction · SILVIA</p>
+                  {ev.prediction
+                    ? <p className="text-[10px] text-cyan-300/80 leading-snug">{ev.prediction}</p>
+                    : <p className="text-[10px] text-slate-600 italic">Pending</p>
+                  }
+                </div>
+                {ev.recommendation && (
+                  <div>
+                    <p className="text-[8px] font-bold text-amber-500/80 uppercase tracking-wider mb-0.5">Recommendation · SILVIA</p>
+                    <p className="text-[10px] text-amber-300/80 leading-snug">{ev.recommendation}</p>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-0.5">
+                  <span className="text-[9px] text-slate-600">{ev.source_name || ""}</span>
+                  {ev.source_url && (
+                    <a href={ev.source_url} target="_blank" rel="noreferrer"
+                      className="text-[9px] text-cyan-500 hover:underline"
+                      onClick={e => e.stopPropagation()}>
+                      Source ↗
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
+        );
+      })}
+
+      {shown.length === 0 && (
+        <p className="text-[10px] text-slate-600 text-center py-4">No world events loaded</p>
+      )}
+    </div>
+  );
+}
+
+// ── Simulation threat feed ─────────────────────────────────────────────────
+function SimFeed({ threats, earthquakes, radiation }) {
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Active Threats</p>
+        <div className="flex flex-col gap-1">
+          {threats?.slice(0, 5).map(t => (
+            <div key={t.id} className="flex gap-2 p-2 rounded bg-slate-800/60 border border-orange-500/20 text-xs">
+              <span>⚠️</span>
+              <div>
+                <p className="font-semibold text-orange-400 leading-tight">{t.headline}</p>
+                <p className="text-slate-500 text-[10px] mt-0.5">{t.region}</p>
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
+      <div>
+        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Seismic Activity</p>
+        <div className="space-y-1">
+          {earthquakes?.slice(0, 5).map(eq => (
+            <div key={eq.id} className="flex justify-between items-center text-[10px] p-1.5 bg-slate-800/50 rounded border border-slate-700/30">
+              <span className="text-slate-400 truncate">{eq.title}</span>
+              <span className="text-red-400 font-bold ml-2">M{eq.mag?.toFixed(1)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Radiation Monitors</p>
+        <div className="space-y-1">
+          {radiation?.map(r => (
+            <div key={r.id} className={`flex justify-between items-center text-[10px] p-1.5 rounded border ${r.alert ? "bg-fuchsia-950/30 border-fuchsia-500/30" : "bg-slate-800/30 border-slate-700/30"}`}>
+              <span className="text-slate-400 truncate text-[9px]">{r.name}</span>
+              <span className={r.alert ? "text-fuchsia-400 font-bold" : "text-slate-500"}>{r.cpm} cpm</span>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -147,8 +274,19 @@ export default function IntelBoardPage() {
   const [worldEvents, setWorldEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState("intel"); // "intel" | "sim"
+  const [categoryFilter, setCategoryFilter] = useState(null);
   const [clock, setClock] = useState(new Date());
   const stopSimRef = useRef(null);
+
+  const categories = useMemo(() => {
+    const cats = new Set(worldEvents.map(e => e.category).filter(Boolean));
+    return [...cats].slice(0, 8);
+  }, [worldEvents]);
+
+  const filteredEvents = categoryFilter
+    ? worldEvents.filter(e => e.category === categoryFilter)
+    : worldEvents;
 
   // Start palantir simulation
   useEffect(() => {
@@ -157,17 +295,22 @@ export default function IntelBoardPage() {
     return stop;
   }, []);
 
-  // Load CMD-CTR real world events and poll every 60s
+  // Load CMD-CTR real world events — poll every 20s while assessments are pending, 60s otherwise
   useEffect(() => {
+    let timeout;
     async function loadEvents() {
       try {
         const data = await fetchWorldEvents({ live: true });
-        setWorldEvents(Array.isArray(data) ? data : []);
-      } catch { /* silently degrade */ }
+        const events = Array.isArray(data) ? data : [];
+        setWorldEvents(events);
+        const hasPending = events.some(e => !e.assessment);
+        timeout = setTimeout(loadEvents, hasPending ? 20000 : 60000);
+      } catch {
+        timeout = setTimeout(loadEvents, 60000);
+      }
     }
     loadEvents();
-    const interval = setInterval(loadEvents, 60000);
-    return () => clearInterval(interval);
+    return () => clearTimeout(timeout);
   }, []);
 
   // Clock
@@ -177,6 +320,7 @@ export default function IntelBoardPage() {
   }, []);
 
   const handleEventSelect = (type, data) => setSelectedEvent({ type, data });
+  const handleWorldEventSelect = (event) => setSelectedEvent({ type: "worldEvent", data: event });
   const handleCameraSelect = (id) => {
     const cam = publicCameras.find(c => c.id === id);
     if (cam) setSelectedEvent({ type: "camera", data: cam });
@@ -278,42 +422,88 @@ export default function IntelBoardPage() {
             ))}
           </div>
 
-          {/* Threat + event feed */}
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Active Threats & Events</p>
-              <ThreatFeed threats={simData.threats} worldEvents={worldEvents} />
-            </div>
+          {/* Tab switcher */}
+          <div className="flex shrink-0 border-b border-slate-700/40">
+            <button
+              onClick={() => setSidebarTab("intel")}
+              className={`flex-1 py-1.5 text-[9px] uppercase tracking-widest font-bold transition-colors ${
+                sidebarTab === "intel"
+                  ? "text-cyan-400 bg-cyan-500/5 border-b-2 border-cyan-500/60"
+                  : "text-slate-600 hover:text-slate-400"
+              }`}
+            >
+              World Intel
+            </button>
+            <button
+              onClick={() => setSidebarTab("sim")}
+              className={`flex-1 py-1.5 text-[9px] uppercase tracking-widest font-bold transition-colors ${
+                sidebarTab === "sim"
+                  ? "text-orange-400 bg-orange-500/5 border-b-2 border-orange-500/60"
+                  : "text-slate-600 hover:text-slate-400"
+              }`}
+            >
+              Sim Data
+            </button>
+          </div>
 
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Recent Seismic Activity</p>
-              <div className="space-y-1">
-                {simData.earthquakes?.slice(0, 5).map(eq => (
-                  <div key={eq.id} className="flex justify-between items-center text-[10px] p-1.5 bg-slate-800/50 rounded border border-slate-700/30">
-                    <span className="text-slate-400 truncate">{eq.title}</span>
-                    <span className="text-red-400 font-bold ml-2">M{eq.mag?.toFixed(1)}</span>
+          {/* Feed content */}
+          <div className="flex-1 overflow-y-auto p-3">
+            {sidebarTab === "intel" ? (
+              <div className="space-y-2">
+                {/* Category filter chips */}
+                {categories.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pb-2 border-b border-slate-700/30">
+                    <button
+                      onClick={() => setCategoryFilter(null)}
+                      className={`text-[8px] px-1.5 py-0.5 rounded border uppercase tracking-wide transition-colors ${
+                        categoryFilter === null
+                          ? "border-cyan-500/60 text-cyan-400 bg-cyan-500/10"
+                          : "border-slate-700/40 text-slate-600 hover:text-slate-400"
+                      }`}
+                    >
+                      All
+                    </button>
+                    {categories.map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
+                        className={`text-[8px] px-1.5 py-0.5 rounded border uppercase tracking-wide transition-colors ${
+                          categoryFilter === cat
+                            ? "border-cyan-500/60 text-cyan-400 bg-cyan-500/10"
+                            : "border-slate-700/40 text-slate-600 hover:text-slate-400"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                )}
+                <WorldIntelFeed events={filteredEvents} onSelectGlobe={handleWorldEventSelect} />
               </div>
-            </div>
-
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2">Radiation Monitors</p>
-              <div className="space-y-1">
-                {simData.radiation?.map(r => (
-                  <div key={r.id} className={`flex justify-between items-center text-[10px] p-1.5 rounded border ${r.alert ? "bg-fuchsia-950/30 border-fuchsia-500/30" : "bg-slate-800/30 border-slate-700/30"}`}>
-                    <span className="text-slate-400 truncate text-[9px]">{r.name}</span>
-                    <span className={r.alert ? "text-fuchsia-400 font-bold" : "text-slate-500"}>{r.cpm} cpm</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            ) : (
+              <SimFeed
+                threats={simData.threats}
+                earthquakes={simData.earthquakes}
+                radiation={simData.radiation}
+              />
+            )}
           </div>
 
           {/* Status footer */}
           <div className="p-3 border-t border-slate-700/40 flex justify-between text-[9px] text-slate-600">
-            <span>⬤ LIVE SIMULATION</span>
-            <span>⬤ {worldEvents.length} RSS EVENTS</span>
+            {sidebarTab === "intel" ? (
+              <>
+                <span>⬤ {filteredEvents.length} EVENTS</span>
+                <span className={worldEvents.some(e => !e.assessment) ? "text-amber-600" : "text-teal-700"}>
+                  ⬤ {worldEvents.filter(e => e.assessment).length}/{worldEvents.length} ASSESSED
+                </span>
+              </>
+            ) : (
+              <>
+                <span>⬤ LIVE SIMULATION</span>
+                <span>⬤ {simData.threats?.length ?? 0} THREATS</span>
+              </>
+            )}
           </div>
         </aside>
       )}

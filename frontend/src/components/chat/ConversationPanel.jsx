@@ -1,28 +1,40 @@
 import { useEffect, useRef, useState } from "react";
+import { animate } from "animejs";
 import { synthesizeSpeech, transcribeAudio, WS_WAKE_URL } from "../../lib/api";
 import WaveformVisualizer from "../voice/WaveformVisualizer";
 
-function MessageBubble({ message }) {
+function MessageBubble({ message, index }) {
+  const seq = `#${String(index + 1).padStart(3, "0")}`;
+
   if (message.role === "user") {
     return (
       <article className="message message--user">
-        <div className="message__meta">
-          <p className="message__label">You</p>
-          <span>TX</span>
+        <div className="message__header">
+          <span className="message__sender">OPERATOR</span>
+          <span className="message__rule" aria-hidden="true" />
+          <span className="message__tag">{seq}</span>
+          <span className="message__tag">TX</span>
         </div>
-        <p>{message.answer}</p>
+        <p className="message__body">{message.answer}</p>
       </article>
     );
   }
 
   return (
     <article className={`message message--assistant${message.isHistory ? " message--history" : ""}`}>
-      <div className="message__meta">
-        <p className="message__label">{message.title || "SILVIA"}</p>
-        <span>{message.mode === "decision" ? "COUNCIL" : "CORE"}</span>
+      <div className="message__header">
+        <span className="message__sender">{message.title || "SILVIA"}</span>
+        <span className="message__rule" aria-hidden="true" />
+        <span className="message__tag">{seq}</span>
+        <span className="message__tag">{message.mode === "decision" ? "COUNCIL" : "CORE"}</span>
       </div>
-      <p style={{ whiteSpace: "pre-wrap" }}>{message.answer}</p>
-      {message.reasoning ? <p className="message__reasoning muted">{message.reasoning}</p> : null}
+      <p className="message__body" style={{ whiteSpace: "pre-wrap" }}>
+        {message.answer}
+        {message.isStreaming && <span className="stream-cursor">█</span>}
+      </p>
+      {message.reasoning ? (
+        <p className="message__reasoning muted">// {message.reasoning}</p>
+      ) : null}
       {message.sources?.length ? (
         <div className="source-list">
           {message.sources.map((source) => (
@@ -141,6 +153,10 @@ export default function ConversationPanel({
   const [lastDiag, setLastDiag] = useState(null);
   const [showDiag, setShowDiag] = useState(false);
 
+  // anime.js targets
+  const inputBayRef = useRef(null);
+  const prevMessageCountRef = useRef(0);
+
   // Stable refs for use inside async callbacks / setTimeout
   const conversationModeRef = useRef(false);
   const recordingStateRef = useRef("idle");
@@ -173,6 +189,30 @@ export default function ConversationPanel({
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  // anime.js: fade+slide new messages in
+  useEffect(() => {
+    const count = messages.length;
+    if (count > prevMessageCountRef.current && listRef.current) {
+      const items = listRef.current.querySelectorAll(".message");
+      const last = items[items.length - 1];
+      if (last) {
+        animate(last, { opacity: [0, 1], translateY: [7, 0], duration: 210, ease: "outCubic" });
+      }
+    }
+    prevMessageCountRef.current = count;
+  }, [messages.length]);
+
+  // anime.js: panel glow pulses when pending
+  useEffect(() => {
+    if (pending && inputBayRef.current) {
+      animate(inputBayRef.current, {
+        borderColor: ["rgba(0,229,255,0.70)", "rgba(0,229,255,0.42)"],
+        duration: 500,
+        ease: "outQuad",
+      });
+    }
+  }, [pending]);
+
   // Conversation mode: when SILVIA finishes responding (and stops speaking), auto-listen
   const prevPendingRef = useRef(false);
   const prevSpeakingRef = useRef(false);
@@ -198,7 +238,7 @@ export default function ConversationPanel({
     ) {
       shouldAutoListenRef.current = false;
       const t = setTimeout(() => {
-        if (conversationModeRef.current && recordingStateRef.current === "idle") {
+        if (conversationModeRef.current && recordingStateRef.current === "idle" && !pendingRef.current) {
           startListeningRef.current?.();
         }
       }, 700);
@@ -315,6 +355,8 @@ export default function ConversationPanel({
     // Keep ref updated so effects can call this without dep-loop
     startListeningRef.current = startListening;
     if (recordingStateRef.current !== "idle") return;
+    // Don't start mic while a response is still streaming
+    if (pendingRef.current) return;
     try {
       const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
       setStream(mic);
@@ -340,10 +382,16 @@ export default function ConversationPanel({
       // Use Web Audio API AnalyserNode: poll amplitude every 100ms.
       // When user speaks then goes silent for SILENCE_MS, auto-stop recording.
       // This is the client-side equivalent of the Python Silero VAD + vad_delay logic.
-      const SILENCE_THRESHOLD = 8;    // 0-255 frequency amplitude; basically any audible sound
-      const SILENCE_MS = 500;          // ms of silence before auto-stop
+      const SILENCE_THRESHOLD = 15;    // 0-255 frequency amplitude; raised to avoid ambient-noise false triggers
+      const SILENCE_MS = 600;          // ms of silence before auto-stop
       const MIN_SPEECH_MS = 300;       // minimum speech duration before silence check kicks in
+      const MAX_RECORDING_MS = 20000;  // hard cap — stop even if VAD never detects silence
       let speechStart = null;
+
+      // Hard-cap timer: force-stop if recording runs too long with no auto-stop
+      const maxRecordingTimer = setTimeout(() => {
+        if (recordingStateRef.current === "recording") recorder.stop();
+      }, MAX_RECORDING_MS);
 
       try {
         const audioCtx = new AudioContext();
@@ -389,6 +437,7 @@ export default function ConversationPanel({
       // ── end VAD ──────────────────────────────────────────────────────────────
 
       recorder.onstop = async () => {
+        clearTimeout(maxRecordingTimer);
         _clearVad();
         mic.getTracks().forEach((t) => t.stop());
         setStream(null);
@@ -406,17 +455,13 @@ export default function ConversationPanel({
           recordingStateRef.current = "idle";
 
           if (result.text) {
-            // In conversation mode: flag to auto-listen after SILVIA responds
-            if (conversationModeRef.current) {
-              shouldAutoListenRef.current = true;
-            }
-            // Auto-submit — voice is first-class, no Enter needed
+            // Submit — auto-listen will re-arm via pendingJustEnded in useEffect after stream ends
             await onSubmit(result.text);
           } else {
-            // No speech detected
+            // No speech detected — retry listening if not pending
             if (conversationModeRef.current) {
               setTimeout(() => {
-                if (conversationModeRef.current && recordingStateRef.current === "idle") {
+                if (conversationModeRef.current && recordingStateRef.current === "idle" && !pendingRef.current) {
                   startListeningRef.current?.();
                 }
               }, 1200);
@@ -482,14 +527,25 @@ export default function ConversationPanel({
     }
   }
 
+  function _flashExec() {
+    if (!inputBayRef.current) return;
+    animate(inputBayRef.current, {
+      backgroundColor: ["rgba(0,229,255,0.10)", "rgba(3,8,11,0.55)"],
+      duration: 420,
+      ease: "outQuad",
+    });
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
+    _flashExec();
     await onSubmit(draft);
   }
 
   async function handleKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      _flashExec();
       await onSubmit(draft);
     }
   }
@@ -531,18 +587,25 @@ export default function ConversationPanel({
 
       <div className="message-list" ref={listRef}>
         {messages.length === 0 && !pending ? (
-          <p style={{ color: "var(--muted)", textAlign: "center", padding: "2rem", fontSize: "0.85rem" }}>
-            Initialising...
-          </p>
+          <div className="terminal-boot">
+            <p className="boot-line boot-line--ok">SILVIA CORE · ONLINE</p>
+            <p className="boot-line boot-line--ok">ASSISTANT BUS · CONNECTED</p>
+            <p className="boot-line boot-line--sys">DIRECT CHANNEL OPEN · AWAITING OPERATOR INPUT</p>
+            <p className="boot-line boot-line--cursor">_</p>
+          </div>
         ) : null}
-        {messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
-        {pending ? (
+        {messages.map((msg, i) => <MessageBubble key={msg.id} message={msg} index={i} />)}
+        {pending && !messages.some((m) => m.isStreaming) ? (
           <article className="message message--assistant">
-            <div className="message__meta">
-              <p className="message__label">SILVIA</p>
-              <span>PROCESSING</span>
+            <div className="message__header">
+              <span className="message__sender">SILVIA</span>
+              <span className="message__rule" aria-hidden="true" />
+              <span className="message__tag">CORE</span>
+              <span className="message__tag message__tag--busy">PROCESSING</span>
             </div>
-            <p style={{ color: "var(--muted)", fontStyle: "italic" }}>Processing...</p>
+            <p className="message__body message__body--processing">
+              <span className="stream-cursor">█</span>
+            </p>
           </article>
         ) : null}
       </div>
@@ -552,7 +615,7 @@ export default function ConversationPanel({
       {showDiag && <VoiceDiagPanel diag={lastDiag} onClose={() => setShowDiag(false)} />}
 
       <form className="composer" onSubmit={handleSubmit}>
-        <div className="composer__inputbay">
+        <div className="composer__inputbay" ref={inputBayRef}>
           <div className="composer__eyebrow">
             <span>Command Input Bay</span>
             <span>Mic auto-sends · Enter to transmit · Shift+Enter for new line</span>
@@ -560,22 +623,27 @@ export default function ConversationPanel({
           {isRecording && (
             <WaveformVisualizer stream={stream} active={isRecording} />
           )}
-          <textarea
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => onDraftChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              wakeWordMode
-                ? "Wake word active — say 'hey silvia' to start listening, or type here."
-                : conversationMode
-                ? "Conversation mode active — speak to SILVIA, or type here."
-                : mode === "decision"
-                ? "Submit a tradeoff, recommendation, or strategic problem for council review."
-                : "Issue a command, ask a question, or say 'open [app]' to launch something."
-            }
-            rows={3}
-          />
+          <div className="composer__prompt-row">
+            <span className="composer__prompt-prefix" aria-hidden="true">{
+              wakeWordMode ? "⊡" : conversationMode ? "⟳" : "//"
+            }</span>
+            <textarea
+              ref={inputRef}
+              value={draft}
+              onChange={(e) => onDraftChange(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                wakeWordMode
+                  ? "say 'hey silvia' to activate · or type command"
+                  : conversationMode
+                  ? "conversation active · speak or type"
+                  : mode === "decision"
+                  ? "submit problem for council review"
+                  : "issue command, query, or 'open [app]'"
+              }
+              rows={3}
+            />
+          </div>
           <div className="composer__footer">
             <div className="voice-controls-inline">
               {/* Wake word toggle */}
@@ -651,7 +719,7 @@ export default function ConversationPanel({
           </div>
         </div>
         <button type="submit" disabled={pending || !draft.trim()}>
-          {pending ? "…" : "Send"}
+          {pending ? "●●●" : "EXEC"}
         </button>
       </form>
     </section>

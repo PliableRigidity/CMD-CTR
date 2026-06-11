@@ -18,6 +18,7 @@ from backend.app.web.news.geography_rules import (
 from backend.app.world.text_cleaner import clean_text
 from backend.app.world.category_classifier import classifier
 from backend.app.world.importance_ranker import ranker
+from backend.app.world.intelligence_service import intelligence_service
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,7 @@ class RSSIngestor:
         # Simple caching for 5 minutes
         now = datetime.now(timezone.utc)
         if self._cache and self._last_update and (now - self._last_update).total_seconds() < 300:
+            intelligence_service.attach(self._cache)
             return self._cache
 
         async with httpx.AsyncClient(headers={"User-Agent": "Mozilla/5.0"}) as client:
@@ -195,7 +197,13 @@ class RSSIngestor:
             
         # Sort by final_rank descending
         world_events.sort(key=lambda x: x.final_rank or 0, reverse=True)
-            
+
+        # Attach cached assessments, then kick off background generation for top events
+        intelligence_service.attach(world_events)
+        top_unassessed = [e for e in world_events[:10] if not e.assessment]
+        if top_unassessed:
+            asyncio.create_task(intelligence_service.generate_batch(top_unassessed))
+
         self._cache = world_events
         self._last_update = now
         return world_events

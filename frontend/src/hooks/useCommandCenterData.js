@@ -21,7 +21,7 @@ import {
   mediaPrevious,
   openAppAction,
   probeNode,
-  sendChat,
+  sendChatStream,
   sendDecision,
   setAudioVolume,
   setMode,
@@ -115,29 +115,68 @@ export function useCommandCenterData() {
   }, [sessionId]);
 
   useEffect(() => {
-    const socket = createEventsSocket();
-    socketRef.current = socket;
-    socket.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data);
-        setLogs((current) => [...current.slice(-99), parsed]);
-      } catch {
-        // Ignore malformed messages.
-      }
-    };
-    socket.onerror = () => {
-      setError((current) => current || "Live event stream disconnected.");
-    };
+    let dead = false;
+    let backoff = 1000;
+    let reconnectTimer = null;
+    let activeSocket = null;
+
+    function connect() {
+      const socket = createEventsSocket();
+      activeSocket = socket;
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        backoff = 1000;
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          setLogs((current) => [...current.slice(-99), parsed]);
+        } catch {
+          // ignore malformed frames
+        }
+      };
+
+      socket.onerror = () => {};
+
+      socket.onclose = () => {
+        if (!dead) {
+          reconnectTimer = setTimeout(() => {
+            backoff = Math.min(backoff * 2, 30000);
+            connect();
+          }, backoff);
+        }
+      };
+    }
+
+    connect();
+
     return () => {
-      socket.close();
+      dead = true;
+      clearTimeout(reconnectTimer);
+      activeSocket?.close();
     };
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const nodesData = await fetchNodes();
+        setNodes(nodesData);
+      } catch {}
+    }, 65000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     if (!voice?.speech_enabled) {
       return;
     }
-    const latestAssistant = [...messages].reverse().find((message) => message.role === "assistant");
+    // Skip messages still streaming or where TTS was already handled inline
+    const latestAssistant = [...messages].reverse().find(
+      (message) => message.role === "assistant" && !message.isStreaming && !message.payload?._ttsHandled
+    );
     const speechText = latestAssistant?.payload?.speech_text || latestAssistant?.answer;
     if (!speechText) {
       return;
@@ -191,34 +230,116 @@ export function useCommandCenterData() {
 
   async function submitQuery(value = draft) {
     const trimmed = value.trim();
-    if (!trimmed || pending) {
-      return false;
-    }
+    if (!trimmed || pending) return false;
 
     setPending(true);
     setError("");
+    setDraft("");
 
-    const userMessage = {
+    setMessages((current) => [...current, {
       id: `user-${Date.now()}`,
       role: "user",
       answer: trimmed,
-    };
-    setMessages((current) => [...current, userMessage]);
+    }]);
 
     try {
-      const response =
-        mode === "decision"
-          ? await sendDecision({ query: trimmed, mode: "decision", session_id: sessionId })
-          : await sendChat({ query: trimmed, mode: "conversation", session_id: sessionId });
-      setMessages((current) => [
-        ...current,
-        {
+      if (mode === "decision") {
+        const response = await sendDecision({ query: trimmed, mode: "decision", session_id: sessionId });
+        setMessages((current) => [...current, {
           id: `assistant-${Date.now()}`,
           role: "assistant",
           ...response,
-        },
-      ]);
-      setDraft("");
+        }]);
+        return true;
+      }
+
+      // Streaming conversation path
+      const streamMsgId = `assistant-stream-${Date.now()}`;
+      setMessages((current) => [...current, {
+        id: streamMsgId,
+        role: "assistant",
+        mode: "conversation",
+        title: "SILVIA",
+        answer: "",
+        isStreaming: true,
+        confidence: 0,
+        sources: [],
+        agents: [],
+        logs: [],
+        payload: {},
+      }]);
+
+      // Capture current speech state for use inside stream callback
+      const speechEnabled = voice?.speech_enabled ?? false;
+      let firstSentenceSpoken = false;
+      let ttsText = "";
+      const SENTENCE_RE = /^.+?[.!?](?:\s|$)/s;
+
+      await sendChatStream(
+        { query: trimmed, mode: "conversation", session_id: sessionId },
+        (chunk) => {
+          if (chunk.type === "token") {
+            ttsText += chunk.token;
+            setMessages((current) => current.map((msg) =>
+              msg.id === streamMsgId ? { ...msg, answer: ttsText } : msg
+            ));
+
+            // Sentence-level TTS: speak first complete sentence immediately
+            if (!firstSentenceSpoken && speechEnabled) {
+              const m = SENTENCE_RE.exec(ttsText);
+              if (m) {
+                firstSentenceSpoken = true;
+                const firstSentence = m[0].trim();
+                synthesizeSpeech(firstSentence).then(async (buffer) => {
+                  try {
+                    const ctx = new AudioContext();
+                    const decoded = await ctx.decodeAudioData(buffer);
+                    const src = ctx.createBufferSource();
+                    src.buffer = decoded;
+                    src.connect(ctx.destination);
+                    setVoice((v) => v ? { ...v, speaking: true } : v);
+                    updateVoiceState({ speaking: true, speech_enabled: true }).catch(() => {});
+                    src.onended = () => {
+                      ctx.close();
+                      setVoice((v) => v ? { ...v, speaking: false } : v);
+                      updateVoiceState({ speaking: false, speech_enabled: true }).catch(() => {});
+                    };
+                    src.start();
+                  } catch (_) {}
+                }).catch(() => {});
+              }
+            }
+
+          } else if (chunk.type === "full") {
+            // Instant tool/action/memory result — replace streaming placeholder
+            setMessages((current) => current.map((msg) =>
+              msg.id === streamMsgId
+                ? { id: streamMsgId, role: "assistant", isStreaming: false, ...chunk.response }
+                : msg
+            ));
+
+          } else if (chunk.type === "done") {
+            // LLM stream finished — finalize message; mark TTS handled if sentence 1 was spoken
+            setMessages((current) => current.map((msg) =>
+              msg.id === streamMsgId
+                ? {
+                    ...msg,
+                    isStreaming: false,
+                    processing_time_ms: chunk.processing_time_ms,
+                    agents: chunk.agents ?? [],
+                    logs: chunk.logs ?? [],
+                    payload: {
+                      ...msg.payload,
+                      speech_text: chunk.speech_text,
+                      _ttsHandled: firstSentenceSpoken,
+                    },
+                  }
+                : msg
+            ));
+          }
+        }
+      );
+
       return true;
     } catch (submitError) {
       setError(submitError.message || "Request failed.");

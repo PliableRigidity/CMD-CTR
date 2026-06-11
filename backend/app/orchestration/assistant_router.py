@@ -29,6 +29,7 @@ class AssistantPlatformRouter:
             system_control_service=self.system_control_service,
             maps_service=self.maps_service,
             memory_service=self.memory_service,
+            event_service=self.event_service,
         )
         self.decision_service = DecisionService()
         self.device_manager = DeviceManager()

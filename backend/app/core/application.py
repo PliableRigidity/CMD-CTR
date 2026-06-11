@@ -7,11 +7,35 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 from backend.app.api import actions, assistant, decision, devices, events, maps, memory, missions, mode, nodes, system, voice, watch, web, world
 from backend.app.orchestration.assistant_router import AssistantPlatformRouter
+from backend.app.services.node_service import NodeService
 from backend.config import CORS_ALLOW_ORIGINS
 from backend.utils import get_logger, setup_logging
 
 
 logger = get_logger(__name__)
+
+
+async def _node_probe_loop(router: AssistantPlatformRouter) -> None:
+    await asyncio.sleep(4)
+    node_svc = NodeService()
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            probed = await loop.run_in_executor(None, node_svc.probe_all_nodes)
+            for node in probed:
+                level = "info" if node.status == "online" else "warning"
+                detail = f"Status: {node.status}"
+                if node.latency_ms is not None and node.latency_ms > 0.2:
+                    detail += f" | {node.latency_ms:.0f}ms"
+                if node.cpu is not None:
+                    detail += f" | CPU {node.cpu:.0f}% RAM {node.ram:.0f}%"
+                if node.probe_error:
+                    detail += f" | {node.probe_error}"
+                    level = "error"
+                await router.event_service.emit(f"Node: {node.name}", detail, level)
+        except Exception as exc:
+            logger.warning("Node probe loop error: %s", exc)
+        await asyncio.sleep(60)
 
 
 @asynccontextmanager
@@ -31,7 +55,11 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Wake word detector pre-warm failed (non-fatal): %s", exc)
 
+    probe_task = asyncio.create_task(_node_probe_loop(router))
+
     yield
+
+    probe_task.cancel()
     logger.info("Assistant platform shutdown")
 
 

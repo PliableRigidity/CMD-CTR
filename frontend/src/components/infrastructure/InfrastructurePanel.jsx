@@ -1,5 +1,19 @@
 import { useMemo, useState } from "react";
 
+const SOURCE_LABELS = {
+  tailscale: "Tailscale",
+  dns: "DNS",
+  registry: "Registry",
+};
+
+function getIpInfo(node) {
+  if (node.tailscale_ip) return { ip: node.tailscale_ip, source: "tailscale" };
+  if (node.resolved_ip) return { ip: node.resolved_ip, source: "dns" };
+  const hostname = node.hostname || "";
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return { ip: hostname, source: "registry" };
+  return { ip: null, source: "unknown" };
+}
+
 const NODE_TYPES = [
   "workstation", "server", "raspberry-pi", "nas",
   "router", "vm", "container", "edge-device", "custom",
@@ -260,12 +274,22 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                     <span>{node.tailscale_name}</span>
                   </div>
                 )}
-                {node.tailscale_ip && (
-                  <div className="infra-detail-row">
-                    <span className="infra-detail-label">IP</span>
-                    <span className="mono">{node.tailscale_ip}</span>
-                  </div>
-                )}
+                {(() => {
+                  const { ip, source } = getIpInfo(node);
+                  return (
+                    <div className="infra-detail-row">
+                      <span className="infra-detail-label">IP</span>
+                      {ip ? (
+                        <span>
+                          <span className="mono">{ip}</span>
+                          <span className="infra-source-badge">{SOURCE_LABELS[source] || "unknown"}</span>
+                        </span>
+                      ) : (
+                        <span className="muted">unknown</span>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="infra-detail-row">
                   <span className="infra-detail-label">Metrics</span>
                   <span>
@@ -328,19 +352,21 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                     <span className="muted" style={{ fontSize: "0.7rem" }}>{node.notes}</span>
                   </div>
                 )}
-                {node.id !== "workstation" && (
-                  <div className="button-row">
-                    <button className="btn-ghost-sm" onClick={() => handleProbe(node.id)} disabled={probingId === node.id}>
-                      {probingId === node.id ? "Probing..." : "Probe"}
-                    </button>
-                    <button className="btn-ghost-sm" onClick={() => startEdit(node)}>
-                      Edit
-                    </button>
-                    <button className="infra-delete-btn" onClick={() => handleDelete(node.id)}>
-                      Remove node
-                    </button>
-                  </div>
-                )}
+                <div className="button-row">
+                  <button className="btn-ghost-sm" onClick={() => handleProbe(node.id)} disabled={probingId === node.id}>
+                    {probingId === node.id ? "Probing..." : "Probe"}
+                  </button>
+                  {node.id !== "workstation" && (
+                    <>
+                      <button className="btn-ghost-sm" onClick={() => startEdit(node)}>
+                        Edit
+                      </button>
+                      <button className="infra-delete-btn" onClick={() => handleDelete(node.id)}>
+                        Remove
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
