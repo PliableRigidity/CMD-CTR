@@ -99,6 +99,12 @@ TOOLS:
   Examples: "run ipconfig", "execute netstat -an", "terminal systeminfo", "run Get-Service", "run tasklist"
   Extract the command verbatim into the cmd argument. Do NOT add 'powershell' prefix.
 
+- get_stock_price: args {"query": string}
+  Use for ANY stock price, share price, or market quote query.
+  query should be the company name or ticker symbol exactly as said.
+  Examples: "price of Apple", "AAPL stock price", "how much is Tesla", "NVDA quote", "what is Microsoft trading at"
+  NEVER use search_web for stock price queries — always use get_stock_price.
+
 RULES:
 - Time + weather for same place → call_tools with both.
 - Weather with no location → {"action":"final"}
@@ -156,6 +162,24 @@ FEW_SHOTS: list[dict] = [
 
     {"role": "user",      "content": "price of rtx 4090"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"search_web","args":{"query":"RTX 4090 price"}}'},
+
+    {"role": "user",      "content": "what's the price of Apple"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_stock_price","args":{"query":"Apple"}}'},
+
+    {"role": "user",      "content": "AAPL stock price"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_stock_price","args":{"query":"AAPL"}}'},
+
+    {"role": "user",      "content": "how much is Tesla stock"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_stock_price","args":{"query":"Tesla"}}'},
+
+    {"role": "user",      "content": "NVDA quote"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_stock_price","args":{"query":"NVDA"}}'},
+
+    {"role": "user",      "content": "what is Microsoft trading at"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_stock_price","args":{"query":"Microsoft"}}'},
+
+    {"role": "user",      "content": "SPY stock"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_stock_price","args":{"query":"SPY"}}'},
 
     {"role": "user",      "content": "hello"},
     {"role": "assistant", "content": '{"action":"final"}'},
@@ -292,6 +316,18 @@ _WEATHER_RE  = re.compile(r"(?:weather|climate)\s+(?:in|at|for|like\s+in)\s+([a-
 _TEMP_RE     = re.compile(r"temperature\s+in\s+([a-zA-Z\s\-,]+?)[\?\.!]?$")
 _RAIN_RE     = re.compile(r"(?:is\s+it\s+)?raining\s+in\s+([a-zA-Z\s\-,]+?)[\?\.!]?$")
 _HOT_COLD_RE = re.compile(r"(?:is\s+it\s+)?(?:hot|cold|warm|freezing|sunny)\s+in\s+([a-zA-Z\s\-,]+?)[\?\.!]?$")
+
+# Stock price — matches "AAPL stock", "price of Tesla", "how much is NVDA", "Microsoft quote"
+_STOCK_RE = re.compile(
+    r"(?:"
+    r"(?:what(?:'s|\s+is)?\s+(?:the\s+)?)?(?:stock\s+)?(?:price|quote|value)\s+(?:of|for)\s+([A-Za-z][A-Za-z0-9\s.\-&]{1,30}?)|"
+    r"([A-Za-z][A-Za-z0-9\s.\-&]{0,25}?)\s+(?:stock\s+)?(?:price|quote|share\s+price)|"
+    r"how\s+much\s+is\s+([A-Za-z][A-Za-z0-9\s.\-&]{1,25}?)(?:\s+(?:stock|shares?|trading))?|"
+    r"([A-Za-z][A-Za-z0-9\s.\-&]{0,20}?)\s+(?:is\s+)?trading\s+at|"
+    r"([A-Z]{1,6})\s+stock"
+    r")[\?\.!]?$",
+    re.I,
+)
 
 # Node / networking regexes — single-word node names (alphanumeric + dash/underscore)
 _N = r"([a-z0-9][a-z0-9_\-]*)"   # node name capture group
@@ -446,6 +482,12 @@ def _regex_fallback(query: str) -> dict:
     m = _WEATHER_RE.search(text) or _TEMP_RE.search(text) or _RAIN_RE.search(text) or _HOT_COLD_RE.search(text)
     if m:
         return {"action": "call_tool", "name": "get_weather", "args": {"place": m.group(1).strip()}}
+
+    m = _STOCK_RE.search(query)
+    if m:
+        raw = next((g for g in m.groups() if g), "").strip()
+        if raw:
+            return {"action": "call_tool", "name": "get_stock_price", "args": {"query": raw}}
 
     system_result = _regex_system(query)
     if system_result:

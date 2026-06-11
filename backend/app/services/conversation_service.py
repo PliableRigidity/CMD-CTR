@@ -19,6 +19,7 @@ from backend.app.services.speech_sanitizer import sanitize_for_speech
 from backend.app.services.system_control_service import SystemControlService
 from backend.app.services.web_service import WebIntelligenceService
 from backend.app.tools.planner import plan
+from backend.app.tools.stock_tool import get_stock_price
 from backend.app.tools.time_tool import get_time, get_time_in
 from backend.app.tools.weather import get_weather
 from backend.app.web.schemas.models import SearchRequest
@@ -220,6 +221,24 @@ class ConversationService:
                     logger.warning("Weather lookup failed for '%s': %s", place, fetch_err)
                     await self._emit_tool("[TOOL] get_weather", err, "error")
                     return self._simple_response("Weather", f"Weather lookup failed: {type(fetch_err).__name__}.")
+
+            if name == "get_stock_price":
+                query = args.get("query", "").strip()
+                await self._emit_tool("[TOOL] get_stock_price", f"Fetching quote: {query}")
+                try:
+                    data = await get_stock_price(query)
+                    result = self._render_stock(data)
+                    await self._emit_tool("[TOOL] get_stock_price", result)
+                    return self._simple_response("Markets", result)
+                except ValueError as ve:
+                    err = str(ve)
+                    await self._emit_tool("[TOOL] get_stock_price", err, "warning")
+                    return self._simple_response("Markets", err)
+                except Exception as fetch_err:
+                    err = f"{type(fetch_err).__name__}: {fetch_err}"
+                    logger.warning("Stock lookup failed for '%s': %s", query, fetch_err)
+                    await self._emit_tool("[TOOL] get_stock_price", err, "error")
+                    return self._simple_response("Markets", f"Stock lookup failed for {query}.")
 
             if name == "search_web" and self.web_service is not None:
                 query = args.get("query", "").strip()
@@ -1050,6 +1069,17 @@ class ConversationService:
 
     def _render_time_there(self, data: dict) -> str:
         return f"It's currently {data['human']} in {data['place']} ({data['tz']})."
+
+    def _render_stock(self, data: dict) -> str:
+        direction = "▲" if data["change"] >= 0 else "▼"
+        sign = "+" if data["change"] >= 0 else ""
+        state = data.get("marketState", "")
+        state_note = f" ({state})" if state and state != "REGULAR" else ""
+        return (
+            f"{data['name']} ({data['symbol']}) is trading at "
+            f"{data['currency']} {data['price']:.2f}{state_note} — "
+            f"{direction} {sign}{data['change']:.2f} ({sign}{data['changePercent']:.2f}%) today."
+        )
 
     def _render_weather(self, data: dict) -> str:
         desc = (data.get("weather_desc") or "clear conditions").replace("-", " ")
