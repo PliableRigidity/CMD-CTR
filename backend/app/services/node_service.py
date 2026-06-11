@@ -45,12 +45,15 @@ def _init_db() -> None:
                 hostname        TEXT NOT NULL DEFAULT '',
                 tailscale_ip    TEXT,
                 tailscale_name  TEXT,
+                agent_url       TEXT,
                 status          TEXT NOT NULL DEFAULT 'unknown',
                 cpu             REAL,
                 ram             REAL,
                 disk            REAL,
                 temperature     REAL,
                 uptime          INTEGER,
+                services        TEXT,
+                capabilities    TEXT,
                 last_seen       TEXT,
                 last_probe_at   TEXT,
                 latency_ms      REAL,
@@ -70,6 +73,11 @@ def _init_db() -> None:
             ("hostname_valid", "INTEGER"),
             ("tailscale_reachable", "INTEGER"),
             ("probe_error", "TEXT"),
+            ("agent_url", "TEXT"),
+            ("services", "TEXT"),
+            ("capabilities", "TEXT"),
+            ("uptime", "INTEGER"),
+            ("temperature", "REAL"),
         ]:
             if column_name not in existing:
                 conn.execute(f"ALTER TABLE nodes ADD COLUMN {column_name} {column_type}")
@@ -97,6 +105,8 @@ def _init_db() -> None:
 def _row_to_node(row) -> Node:
     d = dict(row)
     d["tags"] = json.loads(d.get("tags") or "[]")
+    d["services"] = json.loads(d["services"]) if d.get("services") else None
+    d["capabilities"] = json.loads(d["capabilities"]) if d.get("capabilities") else None
     if d.get("hostname_valid") is not None:
         d["hostname_valid"] = bool(d["hostname_valid"])
     if d.get("tailscale_reachable") is not None:
@@ -138,8 +148,8 @@ class NodeService:
         try:
             conn.execute(
                 """INSERT INTO nodes
-                       (id, name, type, hostname, tailscale_ip, tailscale_name, status, tags, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, 'unknown', ?, ?)""",
+                       (id, name, type, hostname, tailscale_ip, tailscale_name, agent_url, status, tags, notes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'unknown', ?, ?)""",
                 (
                     node_id,
                     data.name,
@@ -147,6 +157,7 @@ class NodeService:
                     data.hostname or "",
                     data.tailscale_ip,
                     data.tailscale_name,
+                    data.agent_url,
                     json.dumps(data.tags),
                     data.notes,
                 ),
@@ -161,6 +172,10 @@ class NodeService:
         updates = {k: v for k, v in metrics.model_dump().items() if v is not None}
         if not updates:
             return self.get_node(node_id)
+        if "services" in updates:
+            updates["services"] = json.dumps(updates["services"])
+        if "capabilities" in updates:
+            updates["capabilities"] = json.dumps(updates["capabilities"])
         updates["last_seen"] = datetime.now(timezone.utc).isoformat()
         cols = ", ".join(f"{k} = ?" for k in updates)
         vals = list(updates.values()) + [node_id]
@@ -176,6 +191,9 @@ class NodeService:
         updates = data.model_dump(exclude_unset=True)
         if "tags" in updates and updates["tags"] is not None:
             updates["tags"] = json.dumps(updates["tags"])
+        # agent_url can be explicitly set to None to remove it
+        if "agent_url" in updates and updates["agent_url"] == "":
+            updates["agent_url"] = None
         if not updates:
             return self.get_node(node_id)
         cols = ", ".join(f"{k} = ?" for k in updates)

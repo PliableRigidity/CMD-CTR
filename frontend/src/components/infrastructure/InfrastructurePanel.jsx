@@ -15,8 +15,9 @@ function getIpInfo(node) {
 }
 
 const NODE_TYPES = [
-  "workstation", "server", "raspberry-pi", "nas",
-  "router", "vm", "container", "edge-device", "custom",
+  "workstation", "server", "raspberry-pi", "vps", "nas",
+  "router", "vm", "container", "cyberdeck", "edge-device",
+  "drone", "robot", "esp32", "sensor-network", "custom",
 ];
 
 const STATUS_DOT = {
@@ -31,6 +32,7 @@ const EMPTY_FORM = {
   type: "custom",
   hostname: "",
   tailscale_name: "",
+  agent_url: "",
   tags: "",
   notes: "",
 };
@@ -91,6 +93,7 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
         type: form.type,
         hostname: form.hostname.trim(),
         tailscale_name: form.tailscale_name.trim() || undefined,
+        agent_url: form.agent_url.trim() || undefined,
         tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
         notes: form.notes.trim() || undefined,
       });
@@ -108,6 +111,7 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
       type: node.type || "custom",
       hostname: node.hostname || "",
       tailscale_name: node.tailscale_name || "",
+      agent_url: node.agent_url || "",
       tags: (node.tags || []).join(", "),
       notes: node.notes || "",
     });
@@ -123,6 +127,7 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
         type: editForm.type,
         hostname: editForm.hostname.trim(),
         tailscale_name: editForm.tailscale_name.trim() || null,
+        agent_url: editForm.agent_url.trim() || null,
         tags: editForm.tags.split(",").map((t) => t.trim()).filter(Boolean),
         notes: editForm.notes.trim() || null,
       });
@@ -186,6 +191,9 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
             >
               <span className={`infra-dot infra-dot--${STATUS_DOT[node.status] || "unknown"}`} />
               <span className="infra-name">{node.name}</span>
+              {node.agent_url && (
+                <span className="infra-agent-badge" title={node.agent_url}>AGENT</span>
+              )}
               <span className="infra-metrics-inline">
                 <MetricBar value={node.cpu} label="CPU" />
                 <MetricBar value={node.ram} label="RAM" />
@@ -229,6 +237,14 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                         value={editForm.tailscale_name}
                         onChange={(e) => setEditForm((f) => ({ ...f, tailscale_name: e.target.value }))}
                         placeholder="Tailscale name"
+                      />
+                    </div>
+                    <div className="infra-form-row">
+                      <input
+                        className="infra-input"
+                        value={editForm.agent_url}
+                        onChange={(e) => setEditForm((f) => ({ ...f, agent_url: e.target.value }))}
+                        placeholder="Agent URL (e.g. http://100.64.1.5:8765)"
                       />
                     </div>
                     <div className="infra-form-row">
@@ -298,9 +314,34 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                       node.ram != null && `RAM ${node.ram.toFixed(0)}%`,
                       node.disk != null && `Disk ${node.disk.toFixed(0)}%`,
                       node.temperature != null && `${node.temperature.toFixed(0)}°C`,
+                      node.uptime != null && `Up ${Math.floor(node.uptime / 3600)}h`,
                     ].filter(Boolean).join(" · ") || "—"}
                   </span>
                 </div>
+                {node.services && node.services.length > 0 && (
+                  <div className="infra-detail-row">
+                    <span className="infra-detail-label">Services</span>
+                    <span>
+                      {node.services.map((s) => (
+                        <span key={s} className="infra-tag">{s}</span>
+                      ))}
+                    </span>
+                  </div>
+                )}
+                {node.capabilities && node.capabilities.length > 0 && (
+                  <div className="infra-detail-row">
+                    <span className="infra-detail-label">Capabilities</span>
+                    <span className="muted" style={{ fontSize: "0.7rem" }}>
+                      {node.capabilities.join(", ")}
+                    </span>
+                  </div>
+                )}
+                {node.agent_url && (
+                  <div className="infra-detail-row">
+                    <span className="infra-detail-label">Agent</span>
+                    <span className="mono" style={{ fontSize: "0.7rem" }}>{node.agent_url}</span>
+                  </div>
+                )}
                 {node.last_seen && (
                   <div className="infra-detail-row">
                     <span className="infra-detail-label">Last seen</span>
@@ -411,6 +452,15 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
               value={form.tailscale_name}
               onChange={(e) => setForm((f) => ({ ...f, tailscale_name: e.target.value }))}
               placeholder="Tailscale name"
+            />
+          </div>
+          <div className="infra-form-row">
+            <input
+              className="infra-input"
+              value={form.agent_url}
+              onChange={(e) => setForm((f) => ({ ...f, agent_url: e.target.value }))}
+              placeholder="Agent URL (e.g. http://100.64.1.5:8765)"
+              style={{ flex: 1 }}
             />
           </div>
           <div className="infra-form-row">

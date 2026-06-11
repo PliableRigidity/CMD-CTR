@@ -1291,6 +1291,21 @@ h1, h2, h3 {
   letter-spacing: 0.06em;
 }
 
+.infra-agent-badge {
+  display: inline-block;
+  font-size: 0.52rem;
+  padding: 1px 4px;
+  border-radius: 0;
+  background: rgba(0, 229, 255, 0.06);
+  border: 1px solid rgba(0, 229, 255, 0.30);
+  color: var(--accent);
+  margin-left: 5px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  font-family: 'IBM Plex Mono', monospace;
+}
+
 .infra-source-badge {
   display: inline-block;
   font-size: 0.55rem;

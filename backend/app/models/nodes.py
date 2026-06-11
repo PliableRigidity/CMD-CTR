@@ -8,11 +8,17 @@ NODE_TYPES = [
     "workstation",
     "server",
     "raspberry-pi",
+    "vps",
     "nas",
     "router",
     "vm",
     "container",
+    "cyberdeck",
     "edge-device",
+    "drone",
+    "robot",
+    "esp32",
+    "sensor-network",
     "custom",
 ]
 
@@ -23,6 +29,7 @@ class NodeCreate(BaseModel):
     hostname: str = ""
     tailscale_ip: Optional[str] = None
     tailscale_name: Optional[str] = None
+    agent_url: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     notes: Optional[str] = None
 
@@ -33,6 +40,7 @@ class NodeUpdate(BaseModel):
     hostname: Optional[str] = None
     tailscale_ip: Optional[str] = None
     tailscale_name: Optional[str] = None
+    agent_url: Optional[str] = None
     status: Optional[str] = None
     tags: Optional[list[str]] = None
     notes: Optional[str] = None
@@ -45,6 +53,8 @@ class NodeMetricsUpdate(BaseModel):
     disk: Optional[float] = None
     temperature: Optional[float] = None
     uptime: Optional[int] = None
+    services: Optional[list[str]] = None
+    capabilities: Optional[list[str]] = None
 
 
 class Node(BaseModel):
@@ -54,12 +64,15 @@ class Node(BaseModel):
     hostname: str = ""
     tailscale_ip: Optional[str] = None
     tailscale_name: Optional[str] = None
+    agent_url: Optional[str] = None
     status: str = "unknown"
     cpu: Optional[float] = None
     ram: Optional[float] = None
     disk: Optional[float] = None
     temperature: Optional[float] = None
     uptime: Optional[int] = None
+    services: Optional[list[str]] = None
+    capabilities: Optional[list[str]] = None
     last_seen: Optional[str] = None
     last_probe_at: Optional[str] = None
     latency_ms: Optional[float] = None
