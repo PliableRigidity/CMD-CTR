@@ -18,7 +18,7 @@ OPENWEATHER_BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 SEARXNG_URL = os.getenv("SEARXNG_URL", "")  # Empty = disabled; set in .env to enable
 TIMEZONE = os.getenv("TIMEZONE", "Asia/Kolkata")
-APP_HOST = os.getenv("APP_HOST", "127.0.0.1")
+APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8000"))
 CORS_ALLOW_ORIGINS = [
     origin.strip()

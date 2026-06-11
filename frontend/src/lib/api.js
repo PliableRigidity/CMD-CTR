@@ -1,6 +1,8 @@
-const API_BASE = "http://127.0.0.1:8001/api";
-const WS_BASE = "ws://127.0.0.1:8001/api/ws/events";
-export const WS_WAKE_URL = "ws://127.0.0.1:8001/api/ws/wake";
+// Use the same host the browser connected to — works for localhost and Tailscale/LAN
+const _host = window.location.hostname;
+const API_BASE = `http://${_host}:8001/api`;
+const WS_BASE  = `ws://${_host}:8001/api/ws/events`;
+export const WS_WAKE_URL = `ws://${_host}:8001/api/ws/wake`;
 
 async function readJson(response) {
   if (!response.ok) {
