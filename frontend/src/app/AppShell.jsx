@@ -1,3 +1,4 @@
+import { useState } from "react";
 import ActionShortcutsPanel from "../components/actions/ActionShortcutsPanel";
 import DecisionEnginePanel from "../components/agents/DecisionEnginePanel";
 import ConversationPanel from "../components/chat/ConversationPanel";
@@ -8,6 +9,7 @@ import WatchOfficerPanel from "../components/ops/WatchOfficerPanel";
 import TopBar from "../components/shell/TopBar";
 
 export default function AppShell(props) {
+  const [mobileTab, setMobileTab] = useState("chat");
   const latestAssistantMessage = [...props.messages].reverse().find((m) => m.role === "assistant");
 
   return (
@@ -23,7 +25,7 @@ export default function AppShell(props) {
         onOpenIntel={props.openIntelBoard}
       />
 
-      <div className="command-grid">
+      <div className="command-grid" data-mobile-tab={mobileTab}>
         <aside className="rail rail--left">
           <MissionPanel mode={props.mode} onOpenIntel={props.openIntelBoard} />
           <WatchOfficerPanel
@@ -70,6 +72,31 @@ export default function AppShell(props) {
           <EventsStreamPanel logs={props.logs} />
         </aside>
       </div>
+
+      {/* Mobile bottom tab bar — hidden on desktop via CSS */}
+      <nav className="mobile-nav">
+        <button
+          className={`mobile-nav__tab${mobileTab === "missions" ? " mobile-nav__tab--active" : ""}`}
+          onClick={() => setMobileTab("missions")}
+        >
+          <span className="mobile-nav__icon">◈</span>
+          <span className="mobile-nav__label">Missions</span>
+        </button>
+        <button
+          className={`mobile-nav__tab${mobileTab === "chat" ? " mobile-nav__tab--active" : ""}`}
+          onClick={() => setMobileTab("chat")}
+        >
+          <span className="mobile-nav__icon">◉</span>
+          <span className="mobile-nav__label">Chat</span>
+        </button>
+        <button
+          className={`mobile-nav__tab${mobileTab === "intel" ? " mobile-nav__tab--active" : ""}`}
+          onClick={() => setMobileTab("intel")}
+        >
+          <span className="mobile-nav__icon">◎</span>
+          <span className="mobile-nav__label">Intel</span>
+        </button>
+      </nav>
     </div>
   );
 }

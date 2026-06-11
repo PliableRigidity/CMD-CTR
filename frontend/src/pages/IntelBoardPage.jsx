@@ -365,7 +365,7 @@ function StockPanel({ open, onToggle }) {
   }
 
   return (
-    <aside className="absolute top-[76px] left-0 bottom-0 z-20 w-60 bg-slate-950/92 backdrop-blur border-r border-cyan-500/20 flex flex-col overflow-hidden">
+    <aside className="intel-stock-panel absolute top-[76px] left-0 bottom-0 z-20 w-60 bg-slate-950/92 backdrop-blur border-r border-cyan-500/20 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40 shrink-0">
         <p className="text-[10px] text-slate-500 uppercase tracking-widest">Market Watch</p>
@@ -479,10 +479,10 @@ export default function IntelBoardPage() {
   const [simData, setSimData] = useState(() => getInitialState());
   const [worldEvents, setWorldEvents] = useState([]);
   const [selectedEvent, setSelectedEvent] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 700);
   const [sidebarTab, setSidebarTab] = useState("intel"); // "intel" | "sim"
   const [categoryFilter, setCategoryFilter] = useState(null);
-  const [stockPanelOpen, setStockPanelOpen] = useState(true);
+  const [stockPanelOpen, setStockPanelOpen] = useState(() => window.innerWidth > 700);
   const [liveEarthquakes, setLiveEarthquakes] = useState([]);
   const [liveWeather,     setLiveWeather]     = useState([]);
   const [liveMarkets,     setLiveMarkets]     = useState(null);
@@ -625,6 +625,14 @@ export default function IntelBoardPage() {
         <EventPanel event={selectedEvent} onClose={() => setSelectedEvent(null)} />
       )}
 
+      {/* ── Mobile backdrop (dismisses open sidebars) ── */}
+      {(stockPanelOpen || sidebarOpen) && (
+        <div
+          className="intel-mobile-backdrop"
+          onClick={() => { setStockPanelOpen(false); setSidebarOpen(false); }}
+        />
+      )}
+
       {/* ── Stock Panel (left) ── */}
       <StockPanel open={stockPanelOpen} onToggle={() => setStockPanelOpen(v => !v)} />
 
@@ -638,9 +646,10 @@ export default function IntelBoardPage() {
 
       {/* ── Right Sidebar ── */}
       {sidebarOpen && (
-        <aside className="absolute top-[76px] right-0 bottom-0 z-20 w-72 bg-slate-950/90 backdrop-blur border-l border-cyan-500/20 flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-slate-700/40">
+        <aside className="intel-right-sidebar absolute top-[76px] right-0 bottom-0 z-20 w-72 bg-slate-950/90 backdrop-blur border-l border-cyan-500/20 flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-slate-700/40 flex items-center justify-between">
             <p className="text-[10px] text-slate-500 uppercase tracking-widest">Live Intelligence Feed</p>
+            <button onClick={() => setSidebarOpen(false)} className="text-slate-600 hover:text-slate-300 text-xs transition-colors">‹ Hide</button>
           </div>
 
           {/* Layer legend */}
