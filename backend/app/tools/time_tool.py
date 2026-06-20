@@ -4,6 +4,55 @@ from datetime import datetime
 from backend.app.tools.geo import geocode_location
 from backend.config import TIMEZONE
 
+# ---------------------------------------------------------------------------
+# User timezone preference — overrides the TIMEZONE config/env var at runtime.
+# Set via chat command ("set my timezone to Singapore"); persisted to DB by
+# the conversation service. This module holds the live value so every call
+# to get_time() uses the latest preference without a DB round-trip.
+# ---------------------------------------------------------------------------
+
+_user_tz: str | None = None
+
+
+def set_user_timezone(iana_name: str) -> None:
+    """Override the effective timezone. Call from conversation_service when
+    the user changes their preference; persisting to DB is the caller's job."""
+    global _user_tz
+    _user_tz = iana_name
+
+
+def get_user_timezone() -> str:
+    """Return the currently active timezone (user preference > env/config)."""
+    return _user_tz or TIMEZONE
+
+
+def resolve_location_to_tz(location: str) -> str | None:
+    """Map a location name to an IANA timezone string, or None if unrecognised.
+
+    Checks the alias map first (deterministic, zero network). Falls back to a
+    direct zoneinfo lookup so raw IANA strings ('America/New_York') also work.
+    """
+    key = location.lower().strip()
+    if key in _ALIAS:
+        return _ALIAS[key]
+    # Try stripping common trailing words ("central time" → "central")
+    for suffix in (" time", " timezone", " tz", " zone"):
+        if key.endswith(suffix):
+            stripped = key[: -len(suffix)].strip()
+            if stripped in _ALIAS:
+                return _ALIAS[stripped]
+    # Accept raw IANA strings directly
+    try:
+        zoneinfo.ZoneInfo(location)
+        return location
+    except (zoneinfo.ZoneInfoNotFoundError, KeyError):
+        return None
+
+
+def tz_display_name(iana: str) -> str:
+    """'Asia/Singapore' → 'Singapore', 'America/New_York' → 'New York'."""
+    return iana.split("/")[-1].replace("_", " ")
+
 # Lazy-load timezonefinder once at module level
 try:
     from timezonefinder import TimezoneFinder as _TZF
@@ -228,16 +277,17 @@ _ALIAS: dict[str, str] = {
 
 
 def get_time() -> dict:
-    tz = zoneinfo.ZoneInfo(TIMEZONE)
+    tz_name = get_user_timezone()
+    tz = zoneinfo.ZoneInfo(tz_name)
     now = datetime.now(tz)
     return {
         "ok": True,
         "iso": now.isoformat(timespec="seconds"),
         "current_time": now.isoformat(timespec="seconds"),
-        "tz": TIMEZONE,
-        "timezone": TIMEZONE,
+        "tz": tz_name,
+        "timezone": tz_name,
         "human": now.strftime("%I:%M %p").lstrip("0"),
-        "place": None,
+        "place": tz_display_name(tz_name) if _user_tz else None,
         "source": "local",
     }
 

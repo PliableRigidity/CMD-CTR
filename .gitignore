@@ -24,6 +24,9 @@ frontend/node_modules/
 logs/
 *.log
 
+# Runtime (PID lock files, ephemeral state)
+.runtime/
+
 # Database
 data/*.db
 data/*.db-shm

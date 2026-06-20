@@ -77,6 +77,18 @@ async def verify_node(node_id: str, svc: NodeService = Depends(_get_service)):
     return updated
 
 
+@router.get("/nodes/{node_id}/telemetry/history")
+async def get_telemetry_history(
+    node_id: str,
+    hours: int = 24,
+    svc: NodeService = Depends(_get_service),
+):
+    node = svc.get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    return svc.get_telemetry_history(node_id, hours)
+
+
 @router.delete("/nodes/{node_id}", status_code=204)
 async def delete_node(node_id: str, svc: NodeService = Depends(_get_service)):
     deleted = svc.delete_node(node_id)

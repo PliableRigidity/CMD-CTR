@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { animate } from "animejs";
-import { synthesizeSpeech, transcribeAudio, WS_WAKE_URL } from "../../lib/api";
+import { synthesizeSpeech, transcribeAudio, getWakeWsUrl } from "../../lib/api";
 import WaveformVisualizer from "../voice/WaveformVisualizer";
+import RichOutput from "./RichOutput";
 
 function MessageBubble({ message, index }) {
   const seq = `#${String(index + 1).padStart(3, "0")}`;
@@ -46,6 +47,7 @@ function MessageBubble({ message, index }) {
           ))}
         </div>
       ) : null}
+      {message.payload?.rich_output && <RichOutput payload={message.payload} />}
     </article>
   );
 }
@@ -139,6 +141,10 @@ export default function ConversationPanel({
   onClear,
   onVoiceStateChange,
   onError,
+  voiceLoopEnabled = false,
+  onVoiceLoopToggle,
+  voiceLoopState = "idle",
+  voiceLoopError = null,
 }) {
   const listRef = useRef(null);
   const inputRef = useRef(null);
@@ -282,7 +288,7 @@ export default function ConversationPanel({
       const ctx = new AudioContext({ sampleRate: 16000 });
       wakeAudioCtxRef.current = ctx;
 
-      const ws = new WebSocket(WS_WAKE_URL);
+      const ws = new WebSocket(getWakeWsUrl());
       wakeWsRef.current = ws;
 
       ws.onmessage = (e) => {
@@ -456,7 +462,7 @@ export default function ConversationPanel({
 
           if (result.text) {
             // Submit — auto-listen will re-arm via pendingJustEnded in useEffect after stream ends
-            await onSubmit(result.text);
+            await onSubmit(result.text, { voice: true });
           } else {
             // No speech detected — retry listening if not pending
             if (conversationModeRef.current) {
@@ -574,14 +580,26 @@ export default function ConversationPanel({
       <div className="channel-statusbar">
         <span>{mode === "decision" ? "COUNCIL PATH" : "DIRECT ASSIST PATH"}</span>
         <span>{pending ? "PROCESSING" : "STANDBY"}</span>
-        {isRecording && <span style={{ color: "var(--danger)" }}>● LISTENING</span>}
-        {isProcessing && <span style={{ color: "var(--accent)" }}>◌ AUDIO</span>}
+        {isRecording && !voiceLoopEnabled && <span style={{ color: "var(--danger)" }}>● LISTENING</span>}
+        {isProcessing && !voiceLoopEnabled && <span style={{ color: "var(--accent)" }}>◌ AUDIO</span>}
         {isSpeaking && <span style={{ color: "var(--accent-warm)" }}>● SPEAKING</span>}
         {wakeWordMode && !isRecording && !isProcessing && (
           <span style={{ color: "var(--accent-warm)", animation: "pulse 2s infinite" }}>◎ WAKE ACTIVE</span>
         )}
-        {conversationMode && !wakeWordMode && !isRecording && !isProcessing && !isSpeaking && !pending && (
+        {conversationMode && !wakeWordMode && !isRecording && !isProcessing && !isSpeaking && !pending && !voiceLoopEnabled && (
           <span style={{ color: "var(--muted)" }}>⟳ CONV STANDBY</span>
+        )}
+        {voiceLoopEnabled && voiceLoopState === "listening" && (
+          <span style={{ color: "var(--accent-warm)", animation: "pulse 2s infinite" }}>⊛ LOOP ARMED</span>
+        )}
+        {voiceLoopEnabled && voiceLoopState === "recording" && (
+          <span style={{ color: "var(--danger)" }}>⊛ LOOP REC</span>
+        )}
+        {voiceLoopEnabled && voiceLoopState === "processing" && (
+          <span style={{ color: "var(--accent)" }}>⊛ LOOP TX</span>
+        )}
+        {voiceLoopEnabled && voiceLoopState === "error" && (
+          <span style={{ color: "var(--danger)" }}>⊛ LOOP ERR</span>
         )}
       </div>
 
@@ -611,6 +629,7 @@ export default function ConversationPanel({
       </div>
 
       {error ? <div className="error-banner">{error}</div> : null}
+      {voiceLoopError ? <div className="error-banner">Loop: {voiceLoopError}</div> : null}
 
       {showDiag && <VoiceDiagPanel diag={lastDiag} onClose={() => setShowDiag(false)} />}
 
@@ -625,7 +644,7 @@ export default function ConversationPanel({
           )}
           <div className="composer__prompt-row">
             <span className="composer__prompt-prefix" aria-hidden="true">{
-              wakeWordMode ? "⊡" : conversationMode ? "⟳" : "//"
+              voiceLoopEnabled ? "⊛" : wakeWordMode ? "⊡" : conversationMode ? "⟳" : "//"
             }</span>
             <textarea
               ref={inputRef}
@@ -633,7 +652,9 @@ export default function ConversationPanel({
               onChange={(e) => onDraftChange(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
-                wakeWordMode
+                voiceLoopEnabled
+                  ? "hands-free loop active · say 'hey silvia' to begin · or type"
+                  : wakeWordMode
                   ? "say 'hey silvia' to activate · or type command"
                   : conversationMode
                   ? "conversation active · speak or type"
@@ -646,6 +667,18 @@ export default function ConversationPanel({
           </div>
           <div className="composer__footer">
             <div className="voice-controls-inline">
+              {/* Hands-free loop toggle */}
+              <button
+                type="button"
+                className={`voice-btn${voiceLoopEnabled ? " voice-btn--conv" : ""}`}
+                onClick={onVoiceLoopToggle}
+                title={voiceLoopEnabled
+                  ? "Hands-free loop ON — wake → record → chat → TTS → listen. Click to stop."
+                  : "Hands-free loop — say 'hey silvia', SILVIA handles the rest"}
+              >
+                {voiceLoopEnabled ? "⊛ Loop ON" : "⊛ Loop"}
+              </button>
+
               {/* Wake word toggle */}
               <button
                 type="button"

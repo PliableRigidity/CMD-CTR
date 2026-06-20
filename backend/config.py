@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 BASE_DIR = Path(__file__).resolve().parent
 PROMPTS_DIR = BASE_DIR / "prompts"
@@ -28,7 +28,27 @@ CORS_ALLOW_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
-DECISION_TIMEOUT_SECONDS = int(os.getenv("DECISION_TIMEOUT_SECONDS", "45"))
+DECISION_TIMEOUT_SECONDS = int(os.getenv("DECISION_TIMEOUT_SECONDS", "180"))
+
+# Authentication — set API_KEY to enable; empty = disabled (localhost always passes)
+API_KEY = os.getenv("API_KEY", "")
+
+# Brain63 — Obsidian vault path (READ-ONLY knowledge source for SILVIA)
+BRAIN63_VAULT_PATH = os.getenv(
+    "BRAIN63_VAULT_PATH",
+    r"C:\Users\IshaanV\Documents\GitHub\Brain63",
+)
+BRAIN_STEWARD_AUTODRAFT = os.getenv("BRAIN_STEWARD_AUTODRAFT", "false").lower() in ("true", "1", "yes")
+
+# External notifications (Watch Officer alerts)
+NOTIFICATION_WEBHOOK_URL     = os.getenv("NOTIFICATION_WEBHOOK_URL", "")
+NOTIFICATION_WEBHOOK_FORMAT  = os.getenv("NOTIFICATION_WEBHOOK_FORMAT", "discord")
+NOTIFICATION_EMAIL_HOST      = os.getenv("NOTIFICATION_EMAIL_HOST", "")
+NOTIFICATION_EMAIL_PORT      = int(os.getenv("NOTIFICATION_EMAIL_PORT", "587"))
+NOTIFICATION_EMAIL_USER      = os.getenv("NOTIFICATION_EMAIL_USER", "")
+NOTIFICATION_EMAIL_PASS      = os.getenv("NOTIFICATION_EMAIL_PASS", "")
+NOTIFICATION_EMAIL_TO        = os.getenv("NOTIFICATION_EMAIL_TO", "")
+NOTIFICATION_MIN_SEVERITY    = os.getenv("NOTIFICATION_MIN_SEVERITY", "critical")
 
 # Voice — local providers (fallback when Speaches not configured)
 WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")
@@ -45,6 +65,60 @@ SPEACHES_API_KEY = os.getenv("SPEACHES_API_KEY", "speaches")
 SPEACHES_STT_MODEL = os.getenv("SPEACHES_STT_MODEL", "rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo")
 SPEACHES_TTS_MODEL = os.getenv("SPEACHES_TTS_MODEL", "speaches-ai/Kokoro-82M-v1.0-ONNX")
 SPEACHES_TTS_VOICE = os.getenv("SPEACHES_TTS_VOICE", "af_aoede")
+
+# Vision (Phase 12F) — PAUSED/DEFERRED
+# Set ENABLE_VISION_INVENTORY=true in .env to re-enable the experimental vision pipeline.
+# When false (default) all /hardware/vision/* endpoints return 503 and no Ollama calls are made.
+# Productivity (Phase 12G) — Gmail, Google Calendar, Google Contacts
+# Create credentials at https://console.cloud.google.com/ (OAuth 2.0 Client ID → Web Application)
+# Register the redirect URI below as an Authorized Redirect URI in the Google Cloud Console.
+GOOGLE_CLIENT_ID           = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET       = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_OAUTH_REDIRECT_URI  = os.getenv(
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    f"http://localhost:{os.getenv('APP_PORT', '8000')}/api/productivity/auth/callback",
+)
+# Optional: path to a downloaded client_secrets JSON from Google Cloud Console.
+# If set, GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are ignored.
+GOOGLE_CLIENT_SECRETS_FILE = os.getenv("GOOGLE_CLIENT_SECRETS_FILE", "")
+
+# Log Google config status at startup (without leaking the secret)
+import logging as _logging
+_glog = _logging.getLogger("silvia.google_config")
+_glog.info(
+    "[Google OAuth] config — client_id_present=%s  client_secret_present=%s  "
+    "secrets_file=%r  redirect_uri=%s",
+    bool(GOOGLE_CLIENT_ID),
+    bool(GOOGLE_CLIENT_SECRET),
+    GOOGLE_CLIENT_SECRETS_FILE or "(not set)",
+    GOOGLE_OAUTH_REDIRECT_URI,
+)
+
+ENABLE_VISION_INVENTORY      = os.getenv("ENABLE_VISION_INVENTORY", "false").lower() == "true"
+# Telegram Chat Bridge (Phase 14C+)
+TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "false").lower() == "true"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_ALLOWED_USER_IDS: set[int] = {
+    int(uid.strip())
+    for uid in os.getenv("TELEGRAM_ALLOWED_USER_IDS", "").split(",")
+    if uid.strip().lstrip("-").isdigit()
+}
+TELEGRAM_SESSION_ID = os.getenv("TELEGRAM_SESSION_ID", "telegram")
+
+# Stability controls
+SSH_REQUIRES_APPROVAL = os.getenv("SSH_REQUIRES_APPROVAL", "false").lower() in ("true", "1", "yes")
+SILVIA_SAFE_MODE = os.getenv("SILVIA_SAFE_MODE", "false").lower() in ("true", "1", "yes")
+
+# Capability execution — set to "false" to run in simulation mode (no real commands sent)
+ENABLE_CAPABILITY_EXECUTION  = os.getenv("ENABLE_CAPABILITY_EXECUTION", "true").lower() == "true"
+ANTHROPIC_API_KEY           = os.getenv("ANTHROPIC_API_KEY", "")
+# The following vars are only read when ENABLE_VISION_INVENTORY=true:
+VISION_PROVIDER             = os.getenv("VISION_PROVIDER", "auto")
+VISION_MODEL_ANTHROPIC      = os.getenv("VISION_MODEL_ANTHROPIC", "claude-haiku-4-5-20251001")
+VISION_MODEL_OLLAMA         = os.getenv("VISION_MODEL", os.getenv("VISION_MODEL_OLLAMA", "gemma4:e4b"))
+VISION_FALLBACK_MODEL       = os.getenv("VISION_FALLBACK_MODEL", "gemma4:e2b")
+VISION_LEGACY_FALLBACK      = os.getenv("VISION_LEGACY_FALLBACK", "llava:latest")
+VISION_CONFIDENCE_THRESHOLD = float(os.getenv("VISION_CONFIDENCE_THRESHOLD", "0.65"))
 
 WORLD_MODEL_NAME = "phi4-mini-reasoning:latest"
 CONVERSATION_MODEL = "gemma3:4b"

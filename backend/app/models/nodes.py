@@ -32,6 +32,8 @@ class NodeCreate(BaseModel):
     agent_url: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
     notes: Optional[str] = None
+    ssh_username: Optional[str] = None
+    ssh_key_path: Optional[str] = None
 
 
 class NodeUpdate(BaseModel):
@@ -44,6 +46,8 @@ class NodeUpdate(BaseModel):
     status: Optional[str] = None
     tags: Optional[list[str]] = None
     notes: Optional[str] = None
+    ssh_username: Optional[str] = None
+    ssh_key_path: Optional[str] = None
 
 
 class NodeMetricsUpdate(BaseModel):
@@ -94,7 +98,10 @@ class Node(BaseModel):
     tailscale_reachable: Optional[bool] = None
     probe_error: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
     notes: Optional[str] = None
+    ssh_username: Optional[str] = None
+    ssh_key_path: Optional[str] = None
     # Robotics / edge telemetry
     battery_pct: Optional[float] = None
     position_lat: Optional[float] = None

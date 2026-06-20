@@ -158,11 +158,14 @@ async def finish_with_results(
         results_text = "\n".join(f"- {r['tool']}: {r['result']}" for r in tool_results)
         return f"Task results:\n{results_text}"
 
+    from backend.app.services.persona import PERSONA_SUMMARY
+
     results_block = "\n".join(f"[{r['tool']}] {r['result']}" for r in tool_results)
     synthesis_prompt = (
         f"The user asked: {task}\n\n"
         f"Tool results:\n{results_block}\n\n"
-        "Give a concise, direct answer based on these results. No prose about what tools were used."
+        "Give a concise, direct answer based on these results. No prose about what tools were used. "
+        + PERSONA_SUMMARY
     )
     messages = [
         {"role": "system", "content": _HERMES_SYSTEM},

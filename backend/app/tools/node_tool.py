@@ -1,6 +1,7 @@
 """Node registry tools — lookup, probe, update, delete, SSH, verify."""
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import socket
@@ -11,6 +12,16 @@ from typing import Optional
 
 _SAFE_USERNAME = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 _SAFE_HOST = re.compile(r"^[a-zA-Z0-9_.\-]{1,253}$")
+
+# Windows Terminal path — shutil.which("wt") fails when the backend process PATH
+# does not include %LOCALAPPDATA%\Microsoft\WindowsApps (common when launched by
+# a service or IDE). Fall back to the well-known installation path.
+def _find_wt() -> Optional[str]:
+    via_which = shutil.which("wt")
+    if via_which:
+        return via_which
+    candidate = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe")
+    return candidate if os.path.isfile(candidate) else None
 
 
 def _make_result(ok: bool, tool: str, node: str | None, summary: str, data, error: str | None) -> dict:
@@ -28,6 +39,9 @@ def _find_node(name: str):
     needle = name.lower().strip()
     for node in nodes:
         if node.name.lower() == needle:
+            return node
+    for node in nodes:
+        if any(a.lower() == needle for a in node.aliases):
             return node
     for node in nodes:
         if needle in node.name.lower():
@@ -213,6 +227,21 @@ def create_node_entry(name: str, hostname: str = "", tailscale_ip: str = "") -> 
             None,
             f"'{name}' is already registered. Use 'update {name} IP to ...' to change its address.",
         )
+    # Duplicate check: same IP/hostname already registered under a different name?
+    addr = tailscale_ip or hostname
+    if addr and addr not in ("", "local"):
+        from backend.app.services.node_service import NodeService as _NS
+        _all = _NS().list_nodes()
+        for _n in _all:
+            if (_n.tailscale_ip and _n.tailscale_ip == addr) or \
+               (_n.hostname and _n.hostname == addr):
+                return _make_result(
+                    False, "add_node", name,
+                    f"Address {addr} is already registered as '{_n.name}'. "
+                    f"Say 'merge {name} into {_n.name}' to add it as an alias instead.",
+                    {"existing_node": _n.name, "existing_id": _n.id},
+                    f"Address {addr} already belongs to '{_n.name}'.",
+                )
     from backend.app.services.node_service import NodeService
     from backend.app.models.nodes import NodeCreate
     ns = NodeService()
@@ -230,7 +259,7 @@ def create_node_entry(name: str, hostname: str = "", tailscale_ip: str = "") -> 
     )
 
 
-def open_ssh_session(name: str, username: str) -> dict:
+def open_ssh_session(name: str, username: str, key_path: Optional[str] = None) -> dict:
     node = _find_node(name)
     if not node:
         return _make_result(
@@ -240,6 +269,12 @@ def open_ssh_session(name: str, username: str) -> dict:
             f"No node named '{name}'. Use 'list nodes' to see registered nodes.",
         )
 
+    # Use stored profile values when caller doesn't supply them
+    if not username and node.ssh_username:
+        username = node.ssh_username
+    if not key_path and node.ssh_key_path:
+        key_path = node.ssh_key_path
+
     ip, source = _ip_source(node)
     host = ip or node.hostname or ""
     if not host or host == "local":
@@ -248,6 +283,13 @@ def open_ssh_session(name: str, username: str) -> dict:
             f"No reachable address on record for {node.name}.",
             None,
             f"No IP or hostname configured for '{node.name}'. Add one first.",
+        )
+    if not username:
+        return _make_result(
+            False, "ssh_node", node.name,
+            f"No SSH username configured for {node.name}.",
+            None,
+            f"No SSH username set for '{node.name}'. Run: set ssh username for {node.name} to <username>",
         )
 
     if not _SAFE_USERNAME.match(username):
@@ -265,18 +307,38 @@ def open_ssh_session(name: str, username: str) -> dict:
             "Host address contains unsafe characters.",
         )
 
-    ssh_cmd = f"ssh {username}@{host}"
-    title = f"SSH: {node.name}"
+    # Resolve key path — "default" maps to the user's default ed25519 key
+    resolved_key = _resolve_key_path(key_path)
+    if resolved_key and not os.path.isfile(resolved_key):
+        return _make_result(
+            False, "ssh_node", node.name,
+            f"SSH key not found: {resolved_key}",
+            None,
+            f"Key file '{resolved_key}' does not exist. Check the path or set a different key.",
+        )
+
+    # Build SSH args list (avoids shell injection; args are passed directly to exec)
+    ssh_args = ["ssh"]
+    if resolved_key:
+        ssh_args += ["-i", resolved_key]
+    ssh_args.append(f"{username}@{host}")
+    ssh_cmd_display = " ".join(ssh_args)
+    title = f"SSH — {node.name}"
 
     try:
-        if shutil.which("wt"):
+        wt = _find_wt()
+        if wt:
+            # Use cmd.exe /c start so the window opens in the foreground.
+            # start "title" "program" args — the first quoted arg is the window title.
             subprocess.Popen(
-                ["wt", "new-tab", "--title", title, "cmd.exe", "/k", ssh_cmd],
-                creationflags=subprocess.DETACHED_PROCESS,
+                ["cmd.exe", "/c", "start", title, wt,
+                 "new-tab", "--title", title, "--"] + ssh_args,
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
             )
         else:
+            # Fallback: plain cmd.exe console window
             subprocess.Popen(
-                ["cmd.exe", "/k", ssh_cmd],
+                ["cmd.exe", "/k"] + ssh_args,
                 creationflags=subprocess.CREATE_NEW_CONSOLE,
             )
     except Exception as exc:
@@ -287,10 +349,51 @@ def open_ssh_session(name: str, username: str) -> dict:
             str(exc),
         )
 
+    key_note = f", key: {resolved_key}" if resolved_key else ""
     return _make_result(
         True, "ssh_node", node.name,
-        f"Opened SSH terminal -> {node.name} ({username}@{host}, source: {source})",
-        {"host": host, "username": username, "source": source, "command": ssh_cmd},
+        f"Opened SSH terminal -> {node.name} ({username}@{host}, source: {source}{key_note})",
+        {"host": host, "username": username, "source": source, "command": ssh_cmd_display,
+         "key_path": resolved_key, "wt_available": bool(wt)},
+        None,
+    )
+
+
+def _resolve_key_path(key_path: Optional[str]) -> Optional[str]:
+    """Expand 'default' to ~/.ssh/id_ed25519 (or id_rsa as fallback). Returns None if no key."""
+    if not key_path:
+        return None
+    if key_path.lower() in ("default", "~/.ssh/id_ed25519"):
+        ed = os.path.expanduser("~/.ssh/id_ed25519")
+        rsa = os.path.expanduser("~/.ssh/id_rsa")
+        return ed if os.path.isfile(ed) else (rsa if os.path.isfile(rsa) else ed)
+    return os.path.expanduser(key_path)
+
+
+def update_ssh_profile(node_name: str, username: Optional[str], key_path: Optional[str]) -> dict:
+    node = _find_node(node_name)
+    if not node:
+        return _make_result(
+            False, "update_ssh_profile", node_name,
+            f"Node '{node_name}' not found.",
+            None,
+            f"No node named '{node_name}'.",
+        )
+    from backend.app.services.node_service import NodeService
+    ns = NodeService()
+    resolved_key = _resolve_key_path(key_path) if key_path else node.ssh_key_path
+    updated = ns.update_ssh_profile(node.id, username or node.ssh_username, resolved_key)
+    if not updated:
+        return _make_result(False, "update_ssh_profile", node_name, "Update failed.", None, "DB update returned None.")
+    parts = []
+    if username:
+        parts.append(f"username → {username}")
+    if key_path:
+        parts.append(f"key → {resolved_key or key_path}")
+    summary = f"SSH profile for {node.name} updated: {', '.join(parts)}." if parts else f"SSH profile for {node.name} unchanged."
+    return _make_result(
+        True, "update_ssh_profile", node.name, summary,
+        {"node": node.name, "ssh_username": updated.ssh_username, "ssh_key_path": updated.ssh_key_path},
         None,
     )
 
@@ -384,6 +487,68 @@ def get_node_telemetry(name: str) -> dict:
         " | ".join(parts),
         _node_metrics_dict(node),
         None,
+    )
+
+
+async def send_bulk_command(node_type: str, command: str, payload: dict | None = None) -> dict:
+    """Send a command to all nodes of a given type concurrently."""
+    import asyncio as _asyncio
+    from backend.app.services.node_service import NodeService
+
+    command = command.strip().lower()
+    if command not in _SAFE_COMMANDS:
+        return _make_result(
+            False, "send_bulk_command", None,
+            f"Unknown command '{command}'.",
+            None,
+            f"Command '{command}' is not in the allowed set: {sorted(_SAFE_COMMANDS)}",
+        )
+
+    ns = NodeService()
+    nodes = ns.list_nodes_by_type(node_type)
+    if not nodes:
+        return _make_result(
+            True, "send_bulk_command", None,
+            f"No {node_type} nodes registered.",
+            {"type": node_type, "nodes": [], "succeeded": 0, "failed": 0},
+            None,
+        )
+
+    agent_nodes = [n for n in nodes if n.agent_url]
+    no_agent = [n for n in nodes if not n.agent_url]
+
+    async def _run_one(node):
+        return await send_node_command(node.name, command, payload)
+
+    results = await _asyncio.gather(*[_run_one(n) for n in agent_nodes], return_exceptions=True)
+
+    per_node = []
+    succeeded = 0
+    failed = 0
+    for node, res in zip(agent_nodes, results):
+        if isinstance(res, Exception):
+            per_node.append({"node": node.name, "ok": False, "message": str(res)})
+            failed += 1
+        else:
+            per_node.append({"node": node.name, "ok": res["ok"], "message": res["summary"]})
+            if res["ok"]:
+                succeeded += 1
+            else:
+                failed += 1
+
+    for node in no_agent:
+        per_node.append({"node": node.name, "ok": False, "message": "No silvia-agent configured"})
+        failed += 1
+
+    summary = f"Bulk '{command}' on {len(nodes)} {node_type}(s): {succeeded} succeeded, {failed} failed"
+    return _make_result(
+        succeeded > 0 or not nodes,
+        "send_bulk_command",
+        None,
+        summary,
+        {"type": node_type, "command": command, "nodes": per_node,
+         "succeeded": succeeded, "failed": failed},
+        None if failed == 0 else f"{failed} node(s) failed",
     )
 
 
@@ -573,8 +738,57 @@ def delete_node_by_name(name: str) -> dict:
     return _make_result(
         ok, "delete_node", node.name,
         f"Deleted node '{node.name}' from registry at {deleted_at}." if ok else f"Failed to delete '{node.name}'.",
-        {"deleted_at": deleted_at} if ok else None,
+        {"node_id": node.id, "node_name": node.name, "deleted_at": deleted_at} if ok else None,
         None if ok else "Delete failed.",
+    )
+
+
+def merge_nodes(source_name: str, target_name: str) -> dict:
+    """Merge source node into target: source's identity becomes an alias, source is deleted."""
+    source = _find_node(source_name)
+    target = _find_node(target_name)
+    if not source:
+        return _make_result(False, "merge_nodes", source_name,
+            f"Source node '{source_name}' not found. Use 'list nodes' to see the registry.",
+            None, f"'{source_name}' not found.")
+    if not target:
+        return _make_result(False, "merge_nodes", target_name,
+            f"Target node '{target_name}' not found. Use 'list nodes' to see the registry.",
+            None, f"'{target_name}' not found.")
+    if source.id == "workstation":
+        return _make_result(False, "merge_nodes", source_name,
+            "Cannot merge the workstation node — it is the primary SILVIA host.",
+            None, "Workstation is protected.")
+    from backend.app.services.node_service import NodeService
+    ns = NodeService()
+    ok, msg = ns.merge_nodes(source.id, target.id)
+    return _make_result(
+        ok, "merge_nodes", target.name,
+        msg,
+        {"merged_from": source.name, "merged_into": target.name,
+         "source_id": source.id, "target_id": target.id} if ok else None,
+        None if ok else msg,
+    )
+
+
+def find_duplicate_nodes() -> dict:
+    """Scan the node registry for duplicate entries sharing the same IP or hostname."""
+    from backend.app.services.node_service import NodeService
+    ns = NodeService()
+    dupes = ns.find_duplicate_nodes()
+    if not dupes:
+        return _make_result(
+            True, "find_duplicate_nodes", None,
+            "No duplicates found — node registry is clean.",
+            {"duplicates": [], "count": 0}, None,
+        )
+    lines = [f"  - '{d['source']}' and '{d['target']}' (shared IP: {d['shared_ip'] or d['shared_hostname']})" for d in dupes]
+    summary = f"Found {len(dupes)} duplicate pair{'s' if len(dupes) != 1 else ''}:\n" + "\n".join(lines)
+    return _make_result(
+        True, "find_duplicate_nodes", None,
+        summary,
+        {"duplicates": dupes, "count": len(dupes)},
+        None,
     )
 
 

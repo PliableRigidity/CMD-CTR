@@ -26,6 +26,16 @@ Local-first AI operating system. All inference runs on your machine via Ollama. 
 16. [Personal Operations](#16-personal-operations)
 17. [Configuration Reference](#17-configuration-reference)
 18. [Troubleshooting](#18-troubleshooting)
+19. [Telemetry History Charts](#19-telemetry-history-charts)
+20. [Scheduled Autonomous Tasks](#20-scheduled-autonomous-tasks)
+21. [API Key Authentication](#21-api-key-authentication)
+22. [Mission Control — Proactive Intelligence](#22-mission-control--proactive-intelligence)
+23. [Project Registry](#23-project-registry)
+24. [Phase History & Roadmap](#24-phase-history--roadmap)
+25. [Telegram Chat Bridge](#25-telegram-chat-bridge)
+26. [Capability Verification Layer](#26-capability-verification-layer)
+27. [Workflow Execution Verification](#27-workflow-execution-verification)
+28. [Stability Controls](#28-stability-controls)
 
 ---
 
@@ -41,6 +51,8 @@ SILVIA is a local AI command center with four main capabilities:
 | **Personal Ops** | Tasks, reminders, calendar, semantic memory across all sessions |
 
 Everything is local. The backend is FastAPI on port **8000**, frontend is React on port **5173**. All LLMs run through Ollama.
+
+SILVIA's conversational identity — personality, tone system, humor and serious-mode rules, follow-through guarantees, and the prompt architecture behind them — is specified in [docs/PERSONALITY.md](PERSONALITY.md) and implemented in `backend/app/services/persona.py`.
 
 ---
 
@@ -184,7 +196,8 @@ The UI is a split-panel command center:
 ```
 
 **Left rail:**
-- **Missions** — task and reminder management
+- **Projects** — registered projects, health status, quick status/priority editing
+- **Missions** — task and reminder management, scheduled tasks
 - **Watch Officer** — active alerts from infrastructure thresholds
 - **Intel Board** — world events feed
 
@@ -340,6 +353,90 @@ See [Section 9](#9-robotics--edge-nodes) for full robotics documentation.
 | `world brief` | Top world events with SILVIA assessment |
 | `intel brief` | Same |
 | `what's happening globally` | Same |
+
+### 6.13 Multi-Node Bulk Commands
+
+Send a single command to **all nodes of a given type** at once. Destructive bulk commands (arm, disarm, reboot, emergency stop) ask for confirmation first.
+
+| Say | What happens |
+|---|---|
+| `land all drones` | Land command to every drone-type node with an agent URL |
+| `disarm all robots` | Disarm command to every robot-type node (asks confirmation) |
+| `arm all drones` | Arm all drone nodes (asks confirmation) |
+| `emergency stop all drones` | Emergency stop across all drones (asks confirmation) |
+| `reboot all vps` | Reboot every VPS-type node (asks confirmation) |
+| `send all robots home` | Return-to-home across all robot nodes |
+
+Nodes without an `agent_url` configured are counted as failed automatically — the command requires an agent to be running on each node.
+
+SILVIA reports the outcome for every node:
+```
+Bulk 'land' → 3 nodes of type 'drone'
+  ✓ drone-01  landed
+  ✓ drone-02  landed
+  ✗ drone-03  no agent configured
+```
+
+### 6.14 Scheduled Tasks
+
+Create tasks that SILVIA runs automatically on a repeating schedule. Execution goes through the Hermes multi-step engine.
+
+| Say | What happens |
+|---|---|
+| `schedule task: check node health every 60 minutes` | Create a recurring task |
+| `schedule a task: world brief every 120 minutes` | Same, alternate phrasing |
+| `show scheduled tasks` | List all tasks with status |
+| `list scheduled tasks` | Same |
+| `disable scheduled task node health` | Pause a task by partial name |
+| `delete scheduled task node health` | Remove permanently |
+
+Tasks can also be managed in the **Scheduled Tasks** section in the Mission panel (left rail).
+
+### 6.15 Mission Control & Proactive Intelligence
+
+All Mission Control commands are grounded in real system data. SILVIA never fabricates priorities, deadlines, or status.
+
+| Say | What happens |
+|---|---|
+| `morning briefing` | Full operational picture: projects, tasks, reminders, alerts, calendar, offline nodes |
+| `good morning` | Same |
+| `daily briefing` | Same |
+| `what's happening today` | Same |
+| `sitrep` | Same |
+| `what should I focus on today` | Priority-ranked work recommendation built from tasks, reminders, alerts, and project activity |
+| `what should I work on` | Same |
+| `daily focus` | Same |
+| `evening review` | End-of-day summary: completed tasks, projects touched, alerts generated, outstanding work |
+| `end of day` | Same |
+| `what did I accomplish today` | Same |
+| `how did today go` | Same |
+| `weekly review` | 7-day summary: completed tasks, active projects, upcoming calendar, alert history |
+| `how was my week` | Same |
+| `what am I forgetting` | Stale projects (14+ days idle), overdue reminders, long-pending tasks (7+ days) |
+| `stale projects` | Same — lists projects with no recorded activity in 14+ days |
+| `what's falling behind` | Same |
+| `what's overdue` | Same |
+| `project health` | Per-project health: status, idle days, task count, active alerts |
+| `show project health` | Same |
+| `show projects` | List all registered projects |
+| `active projects` | Projects with status = active |
+| `create project [name]` | Register a new project |
+| `mark project [name] as complete` | Update project status |
+| `set project [name] to paused` | Same |
+
+### 6.16 Project Registry Commands
+
+| Say | What happens |
+|---|---|
+| `create project Cyberdeck` | New project with default status (active) and priority (normal) |
+| `create project DroneHive priority high` | New project with explicit priority |
+| `list projects` | All projects |
+| `show paused projects` | Filter by status |
+| `mark project KOI as complete` | Update status |
+| `set project University to paused` | Same |
+| `project health` | Full health report across all projects |
+
+Projects are also managed in the **Projects** panel in the left rail. Click any project to expand it, change status/priority, or delete it.
 
 ---
 
@@ -747,6 +844,68 @@ When a metric drops below its warning threshold, the alert is automatically reso
 
 When a reminder fires, it appears as a Watch Officer alert with category `system`. One-time reminders auto-complete. Recurring reminders auto-advance to the next occurrence.
 
+### Reminder Escalation
+
+If a reminder alert is not dismissed by the operator, SILVIA escalates it automatically:
+
+| Time since trigger | Action | Alert severity |
+|---|---|---|
+| 0–24 hours | Original alert fires | `info` |
+| 24+ hours | Escalation alert created: `[ESCALATED] Reminder: ... — unacknowledged for Xh` | `warning` |
+| 72+ hours | Elevation alert created: `[ELEVATED] Reminder: ... — ignored for Xh` | `critical` |
+
+Escalation alerts use separate `rule_key` suffixes (`:escalated`, `:elevated`) so they appear as distinct alerts in the Watch Officer panel. Dismiss the original alert to stop escalation.
+
+### Offline Duration Intelligence
+
+Instead of the static message "Nighthawk offline for 30+ min", the Watch Officer tracks the actual elapsed time and includes it in the alert message:
+
+```
+Nighthawk offline for 2.3h
+```
+
+The message updates on each Watch Officer loop (every 30 seconds) with the current duration.
+
+### Multi-Alert Pattern Detection
+
+If 3 or more active alerts are present simultaneously for the same node (e.g., offline + CPU + RAM), the Watch Officer raises a synthesis alert:
+
+```
+[CRITICAL] Nighthawk: 3 active issues detected simultaneously
+```
+
+This `rule_key` is `node:{id}:cluster` and auto-resolves when the node drops below 3 simultaneous issues.
+
+### External Notifications
+
+SILVIA can push Watch Officer alerts to external channels (Discord, Slack, or email) so you receive alerts even when away from the UI.
+
+Configure in `.env`:
+
+```env
+# Webhook (Discord, Slack, or generic JSON)
+NOTIFICATION_WEBHOOK_URL=https://discord.com/api/webhooks/...
+NOTIFICATION_WEBHOOK_FORMAT=discord   # discord | slack | json
+
+# Email via SMTP
+NOTIFICATION_EMAIL_HOST=smtp.gmail.com
+NOTIFICATION_EMAIL_PORT=587
+NOTIFICATION_EMAIL_USER=you@gmail.com
+NOTIFICATION_EMAIL_PASS=your-app-password
+NOTIFICATION_EMAIL_TO=alerts@yourmail.com
+
+# Minimum severity to notify (warning = both warning+critical; critical = critical only)
+NOTIFICATION_MIN_SEVERITY=critical
+```
+
+Leave `NOTIFICATION_WEBHOOK_URL` and `NOTIFICATION_EMAIL_HOST` empty to disable external notifications entirely (default). The UI Watch Officer panel always shows alerts regardless.
+
+**Debounce:** The same alert rule will not fire again to external channels within 30 minutes, even if it re-triggers. This prevents alert floods on flapping nodes.
+
+**Discord format:** Embeds with colour-coded severity (red = critical, orange = warning).
+**Slack format:** Attachment blocks.
+**Generic JSON:** Raw `POST` with the full alert object.
+
 ---
 
 ## 14. World Intelligence Board
@@ -870,7 +1029,16 @@ Takes 10–60 seconds depending on model speed.
 | `PIPER_MODEL_PATH` | `C:\Piper\models\...` | Path to local Piper TTS model file |
 | `PIPER_USE_CUDA` | `false` | Enable CUDA for Piper TTS |
 | `CORS_ALLOW_ORIGINS` | localhost:5173,... | Allowed CORS origins, comma-separated |
-| `DECISION_TIMEOUT_SECONDS` | `45` | Timeout for MAGI decision mode |
+| `DECISION_TIMEOUT_SECONDS` | `180` | Timeout for MAGI decision mode (council deliberation takes 1–3 min) |
+| `API_KEY` | _(empty)_ | Enable API authentication. Empty = auth disabled. See [Section 21](#21-api-key-authentication) |
+| `NOTIFICATION_WEBHOOK_URL` | _(empty)_ | Webhook URL for external alerts (Discord/Slack/JSON). Empty = disabled |
+| `NOTIFICATION_WEBHOOK_FORMAT` | `discord` | Webhook payload format: `discord`, `slack`, or `json` |
+| `NOTIFICATION_EMAIL_HOST` | _(empty)_ | SMTP hostname for email alerts. Empty = email disabled |
+| `NOTIFICATION_EMAIL_PORT` | `587` | SMTP port (587 for STARTTLS, 465 for SSL) |
+| `NOTIFICATION_EMAIL_USER` | _(empty)_ | SMTP login username |
+| `NOTIFICATION_EMAIL_PASS` | _(empty)_ | SMTP login password (use app password for Gmail) |
+| `NOTIFICATION_EMAIL_TO` | _(empty)_ | Recipient email address for alerts |
+| `NOTIFICATION_MIN_SEVERITY` | `critical` | Minimum alert severity to notify externally: `warning` or `critical` |
 
 ### silvia-agent — Environment Variables
 
@@ -997,3 +1165,929 @@ logs/errors.log    # Errors only
 ```
 
 Enable debug logging by setting `LOG_LEVEL=DEBUG` before starting the backend.
+
+---
+
+## 19. Telemetry History Charts
+
+SILVIA stores every telemetry reading to a time-series table (`node_telemetry_history`) and displays it as a canvas chart in the expanded node detail view.
+
+### What is Stored
+
+Every poll from the agent poll loop (every 30 seconds) writes a row to `node_telemetry_history`:
+
+| Field | Type | Notes |
+|---|---|---|
+| `cpu` | float | CPU % |
+| `ram` | float | RAM % |
+| `disk` | float | Disk % |
+| `temperature` | float | °C |
+| `battery_pct` | float | Robotics only |
+| `altitude` | float | Robotics only |
+
+Data is kept for **7 days** and pruned automatically on each agent poll cycle.
+
+### Viewing the Chart
+
+Expand any node in the Infrastructure panel (click the node card). If the node has CPU, RAM, or battery data, a **History (6h)** sparkline chart appears automatically. No action required.
+
+- Standard nodes: CPU (cyan), RAM (gold), Disk (orange) lines
+- Robotics nodes (drone, robot, ESP32, sensor-network): Battery (green), Altitude (purple) lines
+- Time labels show the first and last data point timestamps
+- Legend shows the most recent value for each metric
+
+### API Access
+
+```bash
+# Last 6 hours of telemetry for a node
+GET /api/nodes/{node_id}/telemetry/history?hours=6
+
+# Up to 7 days
+GET /api/nodes/{node_id}/telemetry/history?hours=168
+```
+
+Returns a JSON array, oldest-first:
+```json
+[
+  {"timestamp": "2026-06-11T14:30:00", "cpu": 42.1, "ram": 67.3, "disk": 55.0, ...},
+  ...
+]
+```
+
+---
+
+## 20. Scheduled Autonomous Tasks
+
+SILVIA can run any prompt automatically on a repeating schedule. Tasks execute through the Hermes multi-step engine, exactly like a manually typed command.
+
+### Creating Tasks
+
+**Via chat:**
+```
+schedule task: check node health every 60 minutes
+schedule a task: world brief every 120 minutes
+schedule task: show all alerts every 30 minutes
+```
+
+**Via the Mission panel (left rail):**
+Click **+ New Task**, enter a name, the prompt SILVIA should run, and the interval in minutes.
+
+**Via the API:**
+```bash
+POST /api/scheduled-tasks
+{
+  "name": "Node Health Check",
+  "prompt": "show all node telemetry",
+  "interval_minutes": 60
+}
+```
+
+### Managing Tasks
+
+**Via chat:**
+```
+show scheduled tasks        # List all tasks
+disable scheduled task node health check
+delete scheduled task world brief
+```
+
+**Via the Mission panel:** Toggle the green/red dot to pause/resume. Click × to delete.
+
+**Via the API:**
+```bash
+GET    /api/scheduled-tasks              # List all
+PUT    /api/scheduled-tasks/{id}        # Update (name, prompt, interval_minutes, enabled)
+DELETE /api/scheduled-tasks/{id}        # Delete
+```
+
+### How Execution Works
+
+- A background loop checks for due tasks every **60 seconds**
+- When a task is due (`next_run ≤ now`), it runs via the Hermes execution engine with `session_id="scheduled-task"`
+- The result is saved as `last_result` on the task
+- `next_run` advances by `interval_minutes` after each run
+- Results appear in the Event Log panel
+
+### Persistence
+
+Scheduled tasks are stored in SQLite (`data/cmdctr.db`) and survive backend restarts. Tasks that were due during a downtime window run at the next check after startup.
+
+---
+
+## 21. API Key Authentication
+
+SILVIA's backend API can be protected with an API key. When enabled, all requests must supply the key or be rejected with `401 Unauthorized`.
+
+### Enabling Auth
+
+Add to `.env`:
+```env
+API_KEY=your-secret-key-here
+```
+
+Restart the backend. Auth is now active.
+
+### Bypasses (always allowed without a key)
+
+- Requests from **localhost** (`127.0.0.1` / `::1`) always bypass auth — local SILVIA use is unaffected
+- Paths: `/health`, `/docs`, `/openapi.json`, `/redoc`
+
+### Providing the Key
+
+**HTTP requests — header:**
+```bash
+curl -H "X-API-Key: your-secret-key-here" http://your-host:8000/api/nodes
+# or
+curl -H "Authorization: Bearer your-secret-key-here" http://your-host:8000/api/nodes
+```
+
+**WebSocket — query parameter:**
+```
+ws://your-host:8000/api/ws/events?api_key=your-secret-key-here
+```
+
+### Disabling Auth
+
+Remove `API_KEY` from `.env` (or set it to empty string). All requests will pass without a key. This is the default and is backwards-compatible with any existing scripts or integrations.
+
+### Security Notes
+
+- Auth is transport-level only. Use HTTPS (reverse proxy with TLS) if exposing SILVIA over the internet.
+- The localhost bypass means you don't need to update local scripts or the frontend when auth is enabled — the frontend connects from the same machine.
+- Never commit your `.env` file — `.gitignore` already excludes it.
+
+
+---
+
+## 22. Mission Control — Proactive Intelligence
+
+Phase 9 added a proactive intelligence layer. SILVIA no longer only responds to questions — it aggregates real data and surfaces actionable information.
+
+### Design Principle
+
+Every recommendation must trace to a real data source:
+- **Brain63** — personal knowledge vault
+- **Projects** — project registry
+- **Tasks** — pending/completed task list
+- **Calendar** — scheduled events
+- **Reminders** — timed notifications with escalation tracking
+- **Watch Officer** — active infrastructure alerts
+- **Nodes** — live telemetry from registered machines
+
+**Unknown > Hallucinated. Always.** If data does not exist, SILVIA says so. It never invents project status, node state, or deadlines.
+
+### Morning Briefing
+
+Command:  /  / 
+
+Data sources polled:
+1. Active + blocked projects (sorted by priority)
+2. High-priority pending tasks
+3. Due reminders
+4. Today Calendar events
+5. Active Watch Officer alerts (critical + warning)
+6. Offline nodes
+
+The LLM synthesizes the structured data into a natural-language briefing. If the LLM is unavailable, the raw structured data is returned instead.
+
+API: 
+
+### Evening Review
+
+Command:  /  / 
+
+Data sources polled:
+1. Tasks completed today
+2. Projects with activity today
+3. Watch Officer alerts created today
+4. Outstanding: pending tasks, overdue reminders, offline nodes
+
+API: 
+
+### Daily Focus
+
+Command:  /  / 
+
+Priority-ranked using 6 tiers:
+1. Critical Watch Officer alerts (tier 0)
+2. Overdue reminders (tier 1)
+3. High-priority pending tasks (tier 2)
+4. Active critical/high projects idle 3+ days (tier 3-4)
+5. Offline nodes (tier 5)
+6. Normal-priority tasks (tier 6)
+
+Up to 10 items returned. The LLM writes the final recommendation with reasoning.
+
+API: 
+
+### Weekly Review
+
+Command:  /  / 
+
+Covers tasks completed, projects active, upcoming calendar and reminders, and alert history from the past 7 days.
+
+API: 
+
+### Forgotten Items Scan
+
+Command:  /  / 
+
+Scans for:
+- **Stale projects**: active/blocked with no activity in 14+ days
+- **Forgotten tasks**: pending tasks created 7+ days ago
+- **Overdue reminders**: trigger_at in the past
+- **Old unresolved alerts**: critical/warning active for 1+ days
+
+API: 
+
+### Project Health
+
+Command:  / 
+
+Per-project health report: health tier, idle days, task count, related reminders and alerts.
+
+API: 
+
+---
+
+## 23. Project Registry
+
+Phase 8 added a first-class Project entity.
+
+### Default Projects (seeded on first run)
+
+| Project | Priority | Status |
+|---|---|---|
+| CMD-CTR | critical | active |
+| DroneHive | high | active |
+| University | high | active |
+| Cyberdeck | normal | active |
+| Brain63 | normal | active |
+| KOI | normal | paused |
+
+### Project Fields
+
+| Field | Description |
+|---|---|
+|  | Display name |
+|  | active / paused / blocked / complete |
+|  | critical / high / normal / low |
+|  | Optional search key for Brain63 vault lookup |
+|  | Free-text notes |
+|  | Timestamp of most recent recorded activity |
+
+### API
+
+
+
+---
+
+## 24. Phase History and Roadmap
+
+### Completed Phases
+
+| Phase | Feature | Status |
+|---|---|---|
+| 1 | Voice pipeline (wake word, VAD, STT, TTS, hands-free loop) | complete |
+| 2 | Brain63 vault integration (read-only), semantic memory | complete |
+| 3 | Node registry, live telemetry probing | complete |
+| 4 | Watch Officer, external notifications, telemetry history charts | complete |
+| 5A | silvia-agent node protocol | complete |
+| 5B | Personal Ops: Tasks, Reminders, Calendar | complete |
+| 5C | Watch Officer rules engine | complete |
+| 6A-B | World Intelligence, Hermes multi-step execution | complete |
+| 7A-C | Robotics C2, bulk commands, notifications | complete |
+| 8 | Mission Control, Project Registry, Scheduled Tasks, API auth | complete |
+| 9 | Proactive intelligence, Evening Review, Reminder escalation, WO intelligence | complete |
+| 10 | Service Registry and capability execution | complete |
+| 11 | Desktop Control and Local File Awareness | complete |
+
+### Background Loop Architecture
+
+
+
+### Data Storage (data/cmdctr.db)
+
+| Table | Contents |
+|---|---|
+| nodes | Node registry |
+| node_telemetry_history | 7-day rolling telemetry |
+| watch_alerts | Watch Officer alerts |
+| reminders | Timed reminders |
+| tasks | Task list |
+| calendar_events | Calendar |
+| projects | Project registry |
+| scheduled_tasks | Autonomous scheduled tasks |
+| conversation_history | Per-session chat |
+| facts | Key-value facts |
+| semantic_index | sqlite-vec vector index |
+| trusted_locations | Registered folders and project paths |
+| app_registry | Registered launchable applications |
+| file_index | Indexed files from trusted locations |
+
+All tables created automatically on first start via CREATE TABLE IF NOT EXISTS. New columns added via runtime migrations.
+
+---
+
+## 22. Mission Control — Proactive Intelligence
+
+Phase 9 added a proactive intelligence layer. SILVIA no longer only responds to questions — it aggregates real data and surfaces actionable information.
+
+### Design Principle
+
+Every recommendation must trace to a real data source:
+- **Brain63** — personal knowledge vault
+- **Projects** — project registry
+- **Tasks** — pending/completed task list
+- **Calendar** — scheduled events
+- **Reminders** — timed notifications with escalation tracking
+- **Watch Officer** — active infrastructure alerts
+- **Nodes** — live telemetry from registered machines
+
+**Unknown > Hallucinated. Always.** If data does not exist, SILVIA says so. It never invents project status, node state, or deadlines.
+
+### Morning Briefing
+
+Command: `morning briefing` / `good morning` / `daily briefing`
+
+Data sources polled:
+1. Active + blocked projects (sorted by priority)
+2. High-priority pending tasks
+3. Due reminders
+4. Today's calendar events
+5. Active Watch Officer alerts (critical + warning)
+6. Offline nodes
+
+The LLM synthesizes the structured data into a natural-language briefing. If the LLM is unavailable, the raw structured data is returned instead.
+
+API: `GET /api/mission/briefing`
+
+### Evening Review
+
+Command: `evening review` / `end of day` / `what did I accomplish today`
+
+Data sources polled:
+1. Tasks completed today
+2. Projects with activity today
+3. Watch Officer alerts created today
+4. Outstanding: pending tasks, overdue reminders, offline nodes
+
+API: `GET /api/mission/evening`
+
+### Daily Focus
+
+Command: `what should I focus on today` / `daily focus` / `what should I work on`
+
+Priority-ranked using 6 tiers:
+1. Critical Watch Officer alerts (tier 0)
+2. Overdue reminders (tier 1)
+3. High-priority pending tasks (tier 2)
+4. Active critical/high projects idle 3+ days (tier 3-4)
+5. Offline nodes (tier 5)
+6. Normal-priority tasks (tier 6)
+
+Up to 10 items returned. The LLM writes the final recommendation with reasoning.
+
+API: `GET /api/mission/focus`
+
+### Weekly Review
+
+Command: `weekly review` / `how was my week` / `week in review`
+
+Covers tasks completed, projects active, upcoming calendar and reminders, and alert history from the past 7 days.
+
+API: `GET /api/mission/weekly`
+
+### Forgotten Items Scan
+
+Command: `what am I forgetting` / `stale projects` / `what's falling behind`
+
+Scans for:
+- **Stale projects**: active/blocked with no activity in 14+ days
+- **Forgotten tasks**: pending tasks created 7+ days ago
+- **Overdue reminders**: trigger_at in the past
+- **Old unresolved alerts**: critical/warning active for 1+ days
+
+API: `GET /api/mission/forgotten`
+
+### Project Health
+
+Command: `project health` / `how are my projects`
+
+Per-project health report: health tier, idle days, task count, related reminders and alerts.
+
+API: `GET /api/mission/health`
+
+---
+
+## 23. Project Registry
+
+Phase 8 added a first-class Project entity.
+
+### Default Projects (seeded on first run)
+
+| Project | Priority | Status |
+|---|---|---|
+| CMD-CTR | critical | active |
+| DroneHive | high | active |
+| University | high | active |
+| Cyberdeck | normal | active |
+| Brain63 | normal | active |
+| KOI | normal | paused |
+
+### Project Fields
+
+| Field | Description |
+|---|---|
+| `name` | Display name |
+| `status` | active / paused / blocked / complete |
+| `priority` | critical / high / normal / low |
+| `brain63_key` | Optional search key for Brain63 vault lookup |
+| `notes` | Free-text notes |
+| `last_activity` | Timestamp of most recent recorded activity |
+
+### API
+
+```
+GET    /api/projects              # List all projects
+POST   /api/projects              # Create project
+GET    /api/projects/{id}         # Get project
+PUT    /api/projects/{id}         # Update project
+DELETE /api/projects/{id}         # Delete project
+POST   /api/projects/{id}/touch   # Update last_activity to now
+```
+
+---
+
+## 24. Desktop Control & Local File Awareness
+
+Phase 11 adds workstation awareness while keeping the control boundary narrow and safe.
+
+### Trusted Locations
+
+Trusted locations map project and folder names to real paths. Each entry stores a name, path, aliases, tags, description, and an `exists` flag.
+
+Seeded locations include CMD-CTR, Brain63, DroneHive, Cyberdeck, Downloads, Documents, Desktop, GitHub, University, and Internship.
+
+Commands:
+
+- `open CMD-CTR folder`
+- `where is Brain63`
+- `show trusted locations`
+- `list CMD-CTR files`
+
+### File Awareness
+
+The `file_index` table stores indexed files from trusted locations. It refreshes automatically when search or recent-file commands run and the location index is stale.
+
+Commands:
+
+- `find STL files`
+- `find PCB files`
+- `find python files in CMD-CTR`
+- `find files related to nighthawk`
+- `show recent files`
+
+### Application Registry
+
+Registered applications store name, executable, aliases, category, and description. SILVIA checks availability before showing launch buttons or launching from chat.
+
+Commands:
+
+- `open VS Code`
+- `launch KiCad`
+- `start Fusion 360`
+- `open browser`
+- `show installed apps`
+
+### Safety Boundary
+
+Allowed actions are folder open, file search, recent-file display, app launch, and registry listing. Delete, rename, move, overwrite, autonomous clicking, and autonomous typing are intentionally out of scope.
+
+### API
+
+```
+GET  /api/desktop/locations
+POST /api/desktop/locations
+GET  /api/desktop/files
+GET  /api/desktop/recent-files
+POST /api/desktop/open/location
+GET  /api/desktop/apps
+POST /api/desktop/apps
+POST /api/desktop/open/app
+```
+
+---
+
+## 24. Phase History and Roadmap
+
+### Completed Phases
+
+| Phase | Feature | Status |
+|---|---|---|
+| 1 | Voice pipeline (wake word, VAD, STT, TTS, hands-free loop) | complete |
+| 2 | Brain63 vault integration (read-only), semantic memory | complete |
+| 3 | Node registry, live telemetry probing | complete |
+| 4 | Watch Officer, external notifications, telemetry history charts | complete |
+| 5A | silvia-agent node protocol | complete |
+| 5B | Personal Ops: Tasks, Reminders, Calendar | complete |
+| 5C | Watch Officer rules engine | complete |
+| 6A-B | World Intelligence, Hermes multi-step execution | complete |
+| 7A-C | Robotics C2, bulk commands, notifications | complete |
+| 8 | Mission Control, Project Registry, Scheduled Tasks, API auth | complete |
+| 9 | Proactive intelligence, Evening Review, Reminder escalation, WO intelligence | complete |
+| 10 | Service Registry and capability execution | complete |
+| 11 | Desktop Control and Local File Awareness | complete |
+
+### Background Loop Architecture
+
+```
+lifespan startup (application.py)
+  node_probe_loop          60s  - ICMP ping all nodes
+  agent_poll_loop          30s  - HTTP poll agent nodes
+  watch_officer_loop       30s  - threshold alerts, duration, pattern detection
+  reminder_loop            60s  - fire due reminders as Watch Officer alerts
+  reminder_escalation_loop 300s - 24h warning, 72h critical escalation
+  scheduled_task_loop      60s  - run due tasks via Hermes
+```
+
+### Data Storage (data/cmdctr.db)
+
+| Table | Contents |
+|---|---|
+| nodes | Node registry |
+| node_telemetry_history | 7-day rolling telemetry |
+| watch_alerts | Watch Officer alerts |
+| reminders | Timed reminders |
+| tasks | Task list |
+| calendar_events | Calendar |
+| projects | Project registry |
+| scheduled_tasks | Autonomous scheduled tasks |
+| conversation_history | Per-session chat |
+| facts | Key-value facts |
+| semantic_index | sqlite-vec vector index |
+| trusted_locations | Registered folders and project paths |
+| app_registry | Registered launchable applications |
+| file_index | Indexed files from trusted locations |
+
+All tables created automatically on first start via CREATE TABLE IF NOT EXISTS. New columns are added via runtime ALTER TABLE migrations with no manual migration scripts required.
+
+---
+
+## 25. Telegram Chat Bridge
+
+SILVIA can receive and reply to messages via a Telegram bot, using the same chat pipeline as the web UI.
+
+### How it works
+
+```
+Telegram message
+  → Telegram Bot API (polling)
+  → telegram_bridge.py
+  → SILVIA conversation pipeline (same as /api/assistant/chat)
+  → Telegram reply
+```
+
+Every Telegram message is forwarded as a normal SILVIA chat request with `source=telegram`. All commands that work in the web UI work in Telegram.
+
+### Setup
+
+**Step 1 — Create a Telegram bot**
+
+1. Open Telegram and search for **@BotFather**
+2. Send `/newbot` and follow the prompts
+3. Copy the bot token (looks like `123456789:ABCDEFabcdef...`)
+
+**Step 2 — Find your Telegram user ID**
+
+1. Search for **@userinfobot** on Telegram
+2. Send it any message — it replies with your user ID (a number like `987654321`)
+
+**Step 3 — Configure .env**
+
+```env
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=123456789:ABCDEFabcdef...
+TELEGRAM_ALLOWED_USER_IDS=987654321
+```
+
+Multiple allowed users (comma-separated):
+```env
+TELEGRAM_ALLOWED_USER_IDS=987654321,112233445
+```
+
+**Step 4 — Install dependency**
+
+```bash
+pip install 'python-telegram-bot>=21'
+```
+
+Or reinstall all requirements:
+```bash
+pip install -r backend/requirements.txt
+```
+
+**Step 5 — Restart SILVIA**
+
+The bridge starts automatically when `TELEGRAM_ENABLED=true`. You'll see in the logs:
+```
+Telegram bridge started — polling active, 1 allowed user(s)
+```
+
+### Security
+
+> **WARNING:** Only add your own Telegram user ID to `TELEGRAM_ALLOWED_USER_IDS`. Anyone whose ID is not in this list gets `Unauthorized.` and their messages are discarded. Never share your bot token publicly.
+
+- `TELEGRAM_ALLOWED_USER_IDS` is checked on every message before any processing
+- Unknown users receive only the string `Unauthorized.` — no other information is returned
+- Your bot token must never be committed to git (it's in `.env` which is in `.gitignore`)
+
+### Confirmation flow
+
+Commands that normally require confirmation in the web UI (destructive actions, commands that execute on nodes) behave the same way in Telegram. SILVIA will reply with the confirmation prompt, and you can respond:
+
+```
+you: reboot nighthawk
+SILVIA: ⚠️ Are you sure you want to reboot Nighthawk? Reply yes to confirm or cancel to abort.
+you: yes
+SILVIA: Sending reboot command to Nighthawk...
+```
+
+### Singleton Guard
+
+Only **one process** may poll a given Telegram bot token at a time. Starting a second poller produces a `409 Conflict` from the Telegram API. SILVIA enforces this with three layers:
+
+1. **PID lock file** (`.runtime/telegram.lock`) — before starting the poller, SILVIA writes its PID and timestamp to the lock file. If a lock already exists and the PID is still alive, startup is skipped.
+2. **Uvicorn reload detection** — when running with `uvicorn --reload`, the parent supervisor process skips polling so only the child worker polls.
+3. **Graceful Conflict handling** — if a `409 Conflict` occurs during polling (e.g., another instance took over), the bridge logs once, stops polling, releases the lock, and does **not** retry.
+
+Stale locks from force-killed processes are automatically detected using `GetExitCodeProcess` on Windows (or `os.kill(pid, 0)` on Unix).
+
+### Status endpoint
+
+```
+GET /api/telegram/status
+```
+
+Returns:
+```json
+{
+  "enabled": true,
+  "configured": true,
+  "running": true,
+  "pid": 12345,
+  "started_at": "2026-06-19T15:30:00Z",
+  "allowed_users_count": 1,
+  "lock_held": true,
+  "lock_pid": 12345
+}
+```
+
+### Startup behavior
+
+| Condition | Result |
+|---|---|
+| `TELEGRAM_ENABLED=false` | Bridge does not start. SILVIA continues normally. |
+| `TELEGRAM_ENABLED=true`, `TELEGRAM_BOT_TOKEN` missing | Error logged, bridge skipped, SILVIA continues. |
+| `TELEGRAM_ALLOWED_USER_IDS` empty | Error logged, bridge refuses to start (open bot safety). |
+| Lock file exists, PID alive | Skipped — another instance is already polling. |
+| Lock file exists, PID dead | Stale lock cleared, bridge starts. |
+| Uvicorn reload parent process | Skipped — only the worker process polls. |
+| All configured correctly | Bridge starts, polling begins, log confirms. |
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `TELEGRAM_ENABLED` | `false` | Set `true` to enable the bridge |
+| `TELEGRAM_BOT_TOKEN` | — | Bot token from BotFather |
+| `TELEGRAM_ALLOWED_USER_IDS` | — | Comma-separated Telegram user IDs to whitelist |
+| `TELEGRAM_SESSION_ID` | `telegram` | Base session ID prefix (each user gets `telegram_{user_id}`) |
+
+---
+
+## 26. Capability Verification Layer
+
+Anti-hallucination guard that prevents SILVIA from fabricating infrastructure state. Every response about system state must come from verified tool output — never from LLM inference.
+
+### Problem it solves
+
+Without this layer, SILVIA could respond to a bare `hostname` command by generating a plausible-sounding hostname from LLM inference — a fabrication indistinguishable from real data. After opening an SSH terminal to a node, she could fabricate answers about that node's state even though she has no command channel to the SSH window.
+
+### How it works
+
+```
+User query
+  ↓
+Verification Interceptor (before social engine)
+  ├─ Bare infra command (hostname, uptime, docker ps)? → Refuse, suggest "run X"
+  ├─ SSH context exists? → Explain SSH terminal limitation
+  └─ Pass → continue normal routing
+  ↓
+Normal routing (fast-paths, social, tools, planner)
+  ↓
+LLM Fallback Guard (before free-text LLM)
+  ├─ Infra state query about a node? → Refuse
+  └─ Pass → LLM generates response
+```
+
+### Intercepted commands
+
+Bare system commands that require actual execution output:
+
+`hostname`, `uptime`, `whoami`, `uname`, `df`, `free`, `top`, `htop`, `ps`, `docker ps`, `docker images`, `systemctl status`, `journalctl`, `ip addr`, `ifconfig`, `netstat`, `ss`, `lsblk`, `mount`, `lscpu`
+
+### SSH terminal awareness
+
+When SILVIA opens an SSH terminal (e.g., via `ssh nighthawk`), she records that a terminal window was opened but acknowledges she has **no command channel** to it. Subsequent infrastructure queries return:
+
+> I opened an SSH terminal to **nighthawk**, but I don't have a command channel to run `hostname` on it remotely. Run the command in the SSH terminal window.
+>
+> To run `hostname` on **this machine**, say: **run hostname**
+
+### Source attribution
+
+All verified command output includes source attribution:
+
+```
+Node: local | Source: run_command | Tool: run_command | Executed: yes | Timestamp: 2026-06-19T15:30:00Z
+```
+
+### Key files
+
+| File | Purpose |
+|---|---|
+| `backend/app/services/capability_verification.py` | `CapabilityVerificationService`, `CapabilityExecutionResult`, infrastructure query regex, SSH terminal tracking, LLM fallback guard |
+| `backend/app/services/conversation_state.py` | Infrastructure terms in `_EXEC_NOUN_VETO` to prevent social routing |
+| `backend/app/services/conversation_service.py` | Verification interceptor, LLM guard, SSH terminal recording |
+
+---
+
+## 27. Workflow Execution Verification
+
+Ensures that workflow approval always triggers actual tool execution — never a generic LLM-generated response.
+
+### Problem it solves
+
+Previously, approving a workflow like `approve WF-019` (for `ssh nighthawk`) would update the workflow status to "approved" but not execute anything. The response was generated by the LLM ("Okay, approved. Let's see what nighthawk is up to.") — pure fabrication with no real action taken. The tool's try/except block silently swallowed exceptions and returned `None`, which was treated as "no response" rather than "execution failure".
+
+### How it works
+
+All three workflow approval paths now share a single verified execution method:
+
+```python
+_execute_approved_workflow(code, tool_name, tool_args)
+```
+
+This method:
+
+1. Marks the workflow as **executing** before the tool runs
+2. Calls `_run_tool_bypassing_safety()` (safety was already checked during workflow creation)
+3. If the tool returns `None` (swallowed exception) → marks **failed** with "Tool returned no result"
+4. If `_last_tool_ok` is `False` or the response title contains "Failed" → marks **failed**
+5. Only if both checks pass → marks **completed**
+6. Stores a structured execution result in the workflow DB
+
+### Three approval paths
+
+| Path | Trigger | Example |
+|---|---|---|
+| Explicit approve | `approve WF-XXX` | `approve WF-028` |
+| Yes on pending | `yes`, `yeah`, `sure`, `ok` | `yes` after seeing WF prompt |
+| Approve all | `approve all workflows` | Bulk approval |
+
+All three paths call `_execute_approved_workflow()` — no path can skip verification.
+
+### Workflow states
+
+```
+draft → pending_review → approved → executing → completed
+                      → rejected              → failed
+                      → cancelled
+```
+
+### Execution result format
+
+Stored in the `execution_result` column of the `workflows` table:
+
+```json
+{
+  "executed": true,
+  "success": true,
+  "executor": "ssh_node",
+  "raw_output": "SSH terminal opened — Nighthawk as ishaan.",
+  "error": null
+}
+```
+
+For failures:
+
+```json
+{
+  "executed": true,
+  "success": false,
+  "executor": "ssh_node",
+  "raw_output": "Node 'fakenode' not found in registry.",
+  "error": "Tool reported failure"
+}
+```
+
+### SSH failure handling
+
+SSH handler failure paths now explicitly set `_last_tool_ok = False` for:
+- Node name not provided
+- Node not found in registry
+- Node has no address configured
+- Node has no SSH username configured
+
+### Key files
+
+| File | Purpose |
+|---|---|
+| `backend/app/services/conversation_service.py` | `_execute_approved_workflow()`, all three approval paths, SSH failure flags |
+| `backend/app/services/workflow_engine.py` | `mark_executing()`, `mark_completed()`, `mark_failed()`, fixed `_audit()` |
+| `backend/app/services/capability_verification.py` | `CapabilityExecutionResult` dataclass |
+
+---
+
+## 28. Stability Controls
+
+Configuration and commands for stabilizing SILVIA and diagnosing issues.
+
+### SSH Approval Control
+
+By default, SSH opens terminals **directly** without requiring workflow approval.
+
+```env
+SSH_REQUIRES_APPROVAL=false   # default — SSH opens directly
+SSH_REQUIRES_APPROVAL=true    # require approval workflow for SSH
+```
+
+Commands that work directly when approval is disabled:
+- `ssh nighthawk` / `connect nighthawk` / `open ssh to nighthawk`
+- If terminal launch fails, SILVIA shows the exact error (never fabricates success)
+
+### Safe Mode
+
+Disables all proactive/background features while keeping read-only functionality working.
+
+```env
+SILVIA_SAFE_MODE=true
+```
+
+When active:
+- Reminder notifications paused
+- Reminder escalation paused
+- Scheduled autonomous tasks paused
+- Read-only features (boards, queries, status) still work
+- Workflow data-deletion protection still active
+
+### System Diagnostics
+
+```
+deep system check
+system diagnostics
+health check
+```
+
+Checks every subsystem and reports OK / Warning / Failed / Disabled / Not Configured:
+Database, Ollama, Node Registry, Service Registry, Capability Registry, Hardware Inventory, Hardware Projects, Project Registry, Gmail, Calendar, Telegram, Reminders, Tasks, Workflow Engine, Approval Engine, Observability Ledger, Knowledge Graph, Project Memory, Digital Twin, Engineering Planner, Brain63, Memory Manager, Brain Steward, Workspace Awareness, Workspace Restore, SSH Profiles, Voice Pipeline, Watch Officer, Fleet Manager.
+
+### Reminder Management
+
+```
+show reminder diagnostics    — active, due, stuck, recurring counts
+dismiss reminder <query>     — complete + silence Watch Officer alert
+clear stuck reminders        — clear all one-time reminders past due
+pause reminders              — temporarily stop all reminder notifications
+resume reminders             — re-enable reminder notifications
+```
+
+### Startup Health Summary
+
+On every backend startup, SILVIA prints a health summary to the log:
+
+```
+SILVIA Startup Health
+========================================
+  Database:     OK (44 tables)
+  Ollama:       OK (18 models)
+  Gmail:        Not configured
+  Telegram:     OK (polling)
+  Reminders:    OK (0 active)
+  SSH:          OK (approval=disabled)
+  Nodes:        OK (6 registered, 3 online)
+========================================
+```
+
+### Troubleshooting
+
+| Problem | Command | Fix |
+|---|---|---|
+| SSH stuck behind approval | Check `.env` | Set `SSH_REQUIRES_APPROVAL=false` |
+| Reminders stuck/repeating | `clear stuck reminders` | Clears all past-due one-time reminders |
+| Reminder won't stop | `dismiss reminder <text>` | Completes reminder + resolves all alerts |
+| System unstable | `SILVIA_SAFE_MODE=true` | Disables proactive features |
+| Unknown subsystem failure | `deep system check` | Full diagnostic report |
+| Telegram 409 Conflict | Restart backend | Singleton lock auto-clears stale PIDs |
+| SSH shows "Username Required" | `set ssh username for <node> to <user>` | Persists SSH profile |

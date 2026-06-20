@@ -1,5 +1,6 @@
 from backend.app.models.assistant import AssistantRequest, AssistantResponse, ModeSelection
 from backend.app.services.action_service import ActionService
+from backend.app.services.brain63_service import Brain63Service
 from backend.app.services.conversation_service import ConversationService
 from backend.app.services.decision_service import DecisionService
 from backend.app.services.device_manager import DeviceManager
@@ -13,6 +14,7 @@ from backend.app.orchestration.execution_engine import ExecutionEngine
 from backend.app.services.web_service import WebIntelligenceService
 from backend.app.services.world_events_service import WorldEventsService
 from backend.memory.memory_service import MemoryService
+from backend.config import BRAIN63_VAULT_PATH
 
 
 class AssistantPlatformRouter:
@@ -26,6 +28,7 @@ class AssistantPlatformRouter:
         self.voice_service = VoiceService()
         self.memory_service = MemoryService()
         self.semantic_memory_service = SemanticMemoryService()
+        self.brain63_service = Brain63Service(vault_path=BRAIN63_VAULT_PATH)
         self.conversation_service = ConversationService(
             web_service=self.web_service,
             action_service=self.action_service,
@@ -34,6 +37,7 @@ class AssistantPlatformRouter:
             memory_service=self.memory_service,
             event_service=self.event_service,
             semantic_memory_service=self.semantic_memory_service,
+            brain63_service=self.brain63_service,
         )
         self.execution_engine = ExecutionEngine(conversation_service=self.conversation_service)
         self.conversation_service.execution_engine = self.execution_engine

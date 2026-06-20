@@ -61,6 +61,64 @@ SITE_ALIASES: dict[str, str] = {
     "trello": "https://trello.com",
 }
 
+# Spoken display names for aliases whose .title() form is wrong.
+_DISPLAY_OVERRIDES: dict[str, str] = {
+    "github": "GitHub", "youtube": "YouTube", "gmail": "Gmail",
+    "chatgpt": "ChatGPT", "mdn": "MDN", "npm": "npm", "pypi": "PyPI",
+    "stackoverflow": "Stack Overflow", "stack overflow": "Stack Overflow",
+    "hackernews": "Hacker News", "hacker news": "Hacker News",
+    "linkedin": "LinkedIn", "bbc": "BBC News", "docker hub": "Docker Hub",
+}
+
+# URL → spoken name, so responses say "Spotify is open" instead of the URL.
+_URL_DISPLAY_NAMES: dict[str, str] = {}
+for _alias, _url in SITE_ALIASES.items():
+    _URL_DISPLAY_NAMES.setdefault(_url, _DISPLAY_OVERRIDES.get(_alias, _alias.title()))
+
+
+def _spoken_name_for_url(url: str) -> str | None:
+    if url in _URL_DISPLAY_NAMES:
+        return _URL_DISPLAY_NAMES[url]
+    stripped = url.rstrip("/")
+    return _URL_DISPLAY_NAMES.get(stripped) or _URL_DISPLAY_NAMES.get(stripped + "/")
+
+
+def _strip_desktop_action_prefix(value: str) -> str:
+    for prefix in ("open ", "launch ", "start ", "run "):
+        if value.startswith(prefix):
+            return value[len(prefix):].strip()
+    return value
+
+
+def _try_desktop_app(value: str) -> ActionExecutionResponse | None:
+    if not value:
+        return None
+    try:
+        from backend.app.services.desktop_service import DesktopService
+        from backend.app.tools.desktop_tool import open_app
+        svc = DesktopService()
+        app = svc.find_app(value)
+        if app is None:
+            return None
+        result = open_app(value)
+        return ActionExecutionResponse(
+            success=bool(result.get("ok")),
+            action=f"desktop:{app['name']}",
+            message=result.get("summary", ""),
+            opened_target=result.get("executable") or app.get("executable"),
+            details={
+                "registry": "app_registry",
+                "app": app,
+                "tool_result": result,
+            },
+        )
+    except Exception as exc:
+        return ActionExecutionResponse(
+            success=False,
+            action=f"desktop:{value}",
+            message=f"Desktop application registry lookup failed for '{value}': {exc}",
+        )
+
 # ---------------------------------------------------------------------------
 # Default actions
 # ---------------------------------------------------------------------------
@@ -252,6 +310,11 @@ class ActionService:
 
     def execute_alias(self, value: str) -> ActionExecutionResponse:
         normalized = value.strip().lower()
+        desktop_target = _strip_desktop_action_prefix(normalized)
+
+        desktop_app = _try_desktop_app(desktop_target or normalized)
+        if desktop_app is not None:
+            return desktop_app
 
         # Exact site alias match
         if normalized in self._site_aliases:
@@ -284,7 +347,14 @@ class ActionService:
         if "." in value and " " not in value:
             return self.open_url(f"https://{value}")
 
-        return ActionExecutionResponse(success=False, action=value, message=f"Unknown action or alias: '{value}'.")
+        return ActionExecutionResponse(
+            success=False,
+            action=value,
+            message=(
+                f"Unknown action or alias: '{value}'. Checked registered desktop apps, "
+                "built-in actions, site aliases, URL syntax, and domain shorthand."
+            ),
+        )
 
     def execute_action(self, action: ActionDescriptor, args: list[str]) -> ActionExecutionResponse:
         try:
@@ -294,11 +364,11 @@ class ActionService:
                 os.startfile(action.target)
                 return ActionExecutionResponse(
                     success=True, action=action.id,
-                    message=f"Opened workspace at {action.target}.",
+                    message=f"{action.label} is open.",
                     opened_target=action.target,
                 )
             if action.kind == "app":
-                return self._launch_app(action.target, action.id, args)
+                return self._launch_app(action.target, action.id, args, label=action.label)
         except Exception as exc:
             return ActionExecutionResponse(
                 success=False, action=action.id,
@@ -317,13 +387,20 @@ class ActionService:
             else:
                 return ActionExecutionResponse(success=False, action="open_url", message="Invalid URL or alias.")
         webbrowser.open(target, new=2)
+        spoken = _spoken_name_for_url(target)
+        if spoken:
+            message = f"{spoken} is open."
+        else:
+            domain = urlparse(target).netloc or target
+            message = f"{domain} is open in the browser."
         return ActionExecutionResponse(
             success=True, action="open_url",
-            message=f"Opened {target} in the browser.",
+            message=message,
             opened_target=target,
         )
 
-    def _launch_app(self, target: str, action_id: str, args: list[str]) -> ActionExecutionResponse:
+    def _launch_app(self, target: str, action_id: str, args: list[str], label: str | None = None) -> ActionExecutionResponse:
+        spoken = label or action_id.removeprefix("open_").replace("_", " ").title()
         # VS Code special case
         if target == "code":
             executable = shutil.which("code") or shutil.which("code.cmd")
@@ -331,7 +408,7 @@ class ActionService:
                 subprocess.Popen([executable, *args] if args else [executable])
                 return ActionExecutionResponse(
                     success=True, action=action_id,
-                    message="Launched Visual Studio Code.",
+                    message="VS Code is up.",
                     opened_target=executable,
                 )
             repo = args[0] if args else str(Path.cwd())
@@ -348,7 +425,7 @@ class ActionService:
                 os.startfile(target)
                 return ActionExecutionResponse(
                     success=True, action=action_id,
-                    message=f"Launched {action_id}.", opened_target=target,
+                    message=f"{spoken} is up.", opened_target=target,
                 )
             except Exception as exc:
                 return ActionExecutionResponse(
@@ -373,7 +450,7 @@ class ActionService:
                     )
         return ActionExecutionResponse(
             success=True, action=action_id,
-            message=f"Launched {action_id}.",
+            message=f"{spoken} is up.",
             opened_target=target,
             details={"args": args},
         )

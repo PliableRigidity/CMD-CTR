@@ -3,7 +3,9 @@ import ActionShortcutsPanel from "../components/actions/ActionShortcutsPanel";
 import DecisionEnginePanel from "../components/agents/DecisionEnginePanel";
 import ConversationPanel from "../components/chat/ConversationPanel";
 import MissionPanel from "../components/command/MissionPanel";
+import ProjectsPanel from "../components/command/ProjectsPanel";
 import EventsStreamPanel from "../components/dashboard/EventsStreamPanel";
+import FilesPanel from "../components/infrastructure/FilesPanel";
 import InfrastructurePanel from "../components/infrastructure/InfrastructurePanel";
 import WatchOfficerPanel from "../components/ops/WatchOfficerPanel";
 import TopBar from "../components/shell/TopBar";
@@ -23,10 +25,13 @@ export default function AppShell(props) {
         devices={props.devices}
         onModeChange={props.switchMode}
         onOpenIntel={props.openIntelBoard}
+        onOpenHardware={props.openHardwareBoard}
+        onOpenSettings={props.onOpenSettings}
       />
 
       <div className="command-grid" data-mobile-tab={mobileTab}>
         <aside className="rail rail--left">
+          <ProjectsPanel />
           <MissionPanel mode={props.mode} onOpenIntel={props.openIntelBoard} />
           <WatchOfficerPanel
             alerts={props.watchAlerts}
@@ -48,6 +53,10 @@ export default function AppShell(props) {
             onClear={props.clearChat}
             onVoiceStateChange={props.setVoiceFlags}
             onError={props.setError}
+            voiceLoopEnabled={props.voiceLoopEnabled}
+            onVoiceLoopToggle={() => props.setVoiceLoopEnabled((v) => !v)}
+            voiceLoopState={props.voiceLoopState}
+            voiceLoopError={props.voiceLoopError}
           />
           {props.mode === "decision" && (
             <DecisionEnginePanel mode={props.mode} message={latestAssistantMessage} />
@@ -57,12 +66,14 @@ export default function AppShell(props) {
         <aside className="rail rail--right">
           <InfrastructurePanel
             nodes={props.nodes}
+            liveTelemetryPoints={props.liveTelemetryPoints}
             onAddNode={props.addNode}
             onSaveNode={props.saveNode}
             onProbeNode={props.probeNodeById}
             onVerifyNode={props.verifyNodeById}
             onDeleteNode={props.removeNode}
           />
+          <FilesPanel />
           <ActionShortcutsPanel
             actions={props.actions}
             audio={props.audio}

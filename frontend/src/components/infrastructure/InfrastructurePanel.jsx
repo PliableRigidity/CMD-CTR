@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
+import TelemetryChart from "./TelemetryChart";
+import { executeCapabilityUI, fetchFleetStatus, fetchRecentActions } from "../../lib/api";
 
 const SOURCE_LABELS = {
   tailscale: "Tailscale",
@@ -56,7 +58,253 @@ const VERIFY_SOURCE_LABELS = {
   ping: "Ping",
 };
 
-export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode, onProbeNode, onVerifyNode, onDeleteNode }) {
+const SVC_STATUS_ICON = { running: "●", stopped: "○", failed: "✗", unknown: "?" };
+const SVC_STATUS_CLASS = { running: "svc-running", stopped: "svc-stopped", failed: "svc-failed", unknown: "svc-unknown" };
+
+function NodeServicesSection({ nodeId, legacyServices, legacyCapabilities }) {
+  const [services, setServices] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [execResults, setExecResults] = useState({});  // key: `${svcId}:${capName}` → {ok, summary}
+  const [executing, setExecuting] = useState(null);    // key of the in-flight execution
+
+  const fetchServices = useCallback(() => {
+    fetch(`/api/services?node_id=${encodeURIComponent(nodeId)}`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then(setServices)
+      .catch(() => setServices([]));
+  }, [nodeId]);
+
+  useEffect(() => {
+    if (!open) return;
+    fetchServices();
+  }, [open, fetchServices]);
+
+  useEffect(() => {
+    function onServicesChanged() { if (open) fetchServices(); }
+    window.addEventListener("silvia:services_changed", onServicesChanged);
+    return () => window.removeEventListener("silvia:services_changed", onServicesChanged);
+  }, [open, fetchServices]);
+
+  async function handleExecute(svc, cap) {
+    const key = `${svc.id}:${cap.name}`;
+    setExecuting(key);
+    const result = await executeCapabilityUI(cap.name, svc.id, {});
+    setExecResults((prev) => ({ ...prev, [key]: result }));
+    setExecuting(null);
+    setTimeout(() => setExecResults((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    }), 5000);
+  }
+
+  const hasStructured = services && services.length > 0;
+  const hasLegacy = (legacyServices && legacyServices.length > 0) || (legacyCapabilities && legacyCapabilities.length > 0);
+
+  if (!hasLegacy && !open && !hasStructured) return null;
+
+  return (
+    <>
+      {hasStructured ? (
+        <div className="infra-detail-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="infra-detail-label">Services</span>
+            <button className="infra-action-btn" style={{ fontSize: "0.6rem", padding: "1px 6px" }}
+              onClick={() => setOpen(!open)}>
+              {open ? "hide" : `${services.length}`}
+            </button>
+          </div>
+          {open && services.map((svc) => (
+            <div key={svc.id} className="svc-row">
+              <span className={`svc-status-dot ${SVC_STATUS_CLASS[svc.status] || "svc-unknown"}`}>
+                {SVC_STATUS_ICON[svc.status] || "?"}
+              </span>
+              <span className="svc-name">{svc.name}</span>
+              <span className="svc-transport">[{svc.transport}]</span>
+              <span className={`svc-status-label ${SVC_STATUS_CLASS[svc.status] || "svc-unknown"}`}>{svc.status}</span>
+              {svc.capabilities && svc.capabilities.length > 0 && (
+                <div className="svc-caps">
+                  {svc.capabilities.map((cap) => {
+                    const key = `${svc.id}:${cap.name}`;
+                    const res = execResults[key];
+                    const busy = executing === key;
+                    return (
+                      <span key={cap.id || cap.name} className="svc-cap-item">
+                        <span className="infra-tag svc-cap-tag">{cap.name || cap}</span>
+                        {cap.id && (
+                          <button
+                            className={`cap-execute-btn${busy ? " cap-execute-btn--busy" : ""}`}
+                            disabled={busy || !!executing}
+                            onClick={() => handleExecute(svc, cap)}
+                            title={`Execute ${cap.name} on ${svc.name}`}
+                          >
+                            {busy ? "…" : "▶"}
+                          </button>
+                        )}
+                        {res && (
+                          <span className={res.ok ? "cap-result-ok" : "cap-result-err"}>
+                            {res.ok ? "✓" : "✗"} {res.summary}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : hasLegacy ? (
+        <>
+          {legacyServices && legacyServices.length > 0 && (
+            <div className="infra-detail-row">
+              <span className="infra-detail-label">Services</span>
+              <span>
+                {legacyServices.map((s) => <span key={s} className="infra-tag">{s}</span>)}
+              </span>
+              <button className="infra-action-btn" style={{ fontSize: "0.6rem", padding: "1px 6px", marginLeft: 4 }}
+                onClick={() => setOpen(!open)}>
+                {open ? "hide" : "structured"}
+              </button>
+            </div>
+          )}
+          {legacyCapabilities && legacyCapabilities.length > 0 && (
+            <div className="infra-detail-row">
+              <span className="infra-detail-label">Capabilities</span>
+              <span className="muted" style={{ fontSize: "0.7rem" }}>
+                {legacyCapabilities.join(", ")}
+              </span>
+            </div>
+          )}
+          {open && services !== null && services.length === 0 && (
+            <div className="infra-detail-row">
+              <span className="muted" style={{ fontSize: "0.7rem" }}>No structured services registered.</span>
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="infra-detail-row">
+          <span className="infra-detail-label">Services</span>
+          <button className="infra-action-btn" style={{ fontSize: "0.6rem", padding: "1px 6px" }}
+            onClick={() => setOpen(!open)}>
+            {open ? "hide" : "load"}
+          </button>
+          {open && services !== null && (
+            <span className="muted" style={{ fontSize: "0.7rem", marginLeft: 8 }}>
+              {services.length === 0 ? "No services registered." : `${services.length} service(s) loaded.`}
+            </span>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+function FleetDashboard() {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const r = await fetchFleetStatus();
+        if (active) setData(r.data);
+      } catch {
+        if (active) setError("unavailable");
+      }
+    }
+    load();
+    const id = setInterval(load, 30000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+
+  if (error) return null;
+  if (!data) return <div className="fleet-loading">Fleet…</div>;
+
+  const { health_score: score, total, online, offline, warning, critical, healthy, active_alerts: alerts } = data;
+  const fill = Math.round((score / 100) * 10);
+  const grade = score >= 90 ? "A" : score >= 75 ? "B" : score >= 60 ? "C" : score >= 40 ? "D" : "F";
+  const gradeClass = score >= 90 ? "fleet-grade--a" : score >= 75 ? "fleet-grade--b" : score >= 60 ? "fleet-grade--c" : "fleet-grade--d";
+
+  return (
+    <div className="fleet-bar">
+      <div className="fleet-score-wrap">
+        <span className="fleet-label">Fleet</span>
+        <span className={`fleet-grade ${gradeClass}`}>{grade}</span>
+        <div className="fleet-bar-track">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <span key={i} className={`fleet-seg ${i < fill ? "fleet-seg--fill" : ""}`} />
+          ))}
+        </div>
+        <span className="fleet-score">{score}</span>
+      </div>
+      <div className="fleet-stats">
+        <span className="fleet-stat fleet-stat--online">● {online}/{total}</span>
+        {offline > 0 && <span className="fleet-stat fleet-stat--offline">✕ {offline} offline</span>}
+        {(warning + critical) > 0 && (
+          <span className="fleet-stat fleet-stat--warn">▲ {warning + critical} degraded</span>
+        )}
+        {alerts > 0 && <span className="fleet-stat fleet-stat--alert">{alerts} alert{alerts !== 1 ? "s" : ""}</span>}
+        {offline === 0 && (warning + critical) === 0 && alerts === 0 && (
+          <span className="fleet-stat fleet-stat--healthy">{healthy} healthy</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecentActivity() {
+  const [rows, setRows] = useState([]);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const r = await fetchRecentActions(10);
+        if (active) setRows(r.data || []);
+      } catch {
+        if (active) setError("unavailable");
+      }
+    }
+    load();
+    const id = setInterval(load, 15000);
+    return () => { active = false; clearInterval(id); };
+  }, []);
+
+  if (error || rows.length === 0) return null;
+
+  const STATUS_ICON = { success: "●", failure: "✕", simulated: "◎", dry_run: "◌", partial: "▲" };
+  const STATUS_CLASS = { success: "obs-success", failure: "obs-failure", simulated: "obs-sim", dry_run: "obs-dry", partial: "obs-partial" };
+
+  return (
+    <div className="obs-panel">
+      <div className="obs-header">Recent Activity</div>
+      <ul className="obs-list">
+        {rows.map((r, i) => {
+          const icon  = STATUS_ICON[r.status] || "○";
+          const cls   = STATUS_CLASS[r.status] || "";
+          const cap   = r.capability || r.tool || "?";
+          const node  = r.node || "local";
+          const ts    = (r.ts || "").slice(11, 16);
+          const msg   = r.message ? ` — ${r.message.slice(0, 48)}` : "";
+          return (
+            <li key={i} className={`obs-row ${cls}`}>
+              <span className="obs-icon">{icon}</span>
+              <span className="obs-cap">{cap}</span>
+              <span className="obs-node">{node}</span>
+              <span className="obs-msg">{msg}</span>
+              <span className="obs-ts">{ts}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+export default function InfrastructurePanel({ nodes = [], liveTelemetryPoints = {}, onAddNode, onSaveNode, onProbeNode, onVerifyNode, onDeleteNode }) {
   const [expanded, setExpanded] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -220,6 +468,9 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
         </div>
       </div>
 
+      <FleetDashboard />
+      <RecentActivity />
+
       <input
         className="infra-input"
         value={query}
@@ -382,24 +633,7 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                     ].filter(Boolean).join(" · ") || "—"}
                   </span>
                 </div>
-                {node.services && node.services.length > 0 && (
-                  <div className="infra-detail-row">
-                    <span className="infra-detail-label">Services</span>
-                    <span>
-                      {node.services.map((s) => (
-                        <span key={s} className="infra-tag">{s}</span>
-                      ))}
-                    </span>
-                  </div>
-                )}
-                {node.capabilities && node.capabilities.length > 0 && (
-                  <div className="infra-detail-row">
-                    <span className="infra-detail-label">Capabilities</span>
-                    <span className="muted" style={{ fontSize: "0.7rem" }}>
-                      {node.capabilities.join(", ")}
-                    </span>
-                  </div>
-                )}
+                <NodeServicesSection nodeId={node.id} legacyServices={node.services} legacyCapabilities={node.capabilities} />
                 {node.agent_url && (
                   <div className="infra-detail-row">
                     <span className="infra-detail-label">Agent</span>
@@ -457,6 +691,19 @@ export default function InfrastructurePanel({ nodes = [], onAddNode, onSaveNode,
                     <span className="muted" style={{ fontSize: "0.7rem" }}>{node.notes}</span>
                   </div>
                 )}
+
+                {/* Telemetry history chart — shown when node has metrics data */}
+                {(node.cpu != null || node.ram != null || node.battery_pct != null) && (
+                  <div style={{ paddingTop: 4, paddingBottom: 4 }}>
+                    <p className="infra-detail-label" style={{ marginBottom: 2 }}>History (6h)</p>
+                    <TelemetryChart
+                      nodeId={node.id}
+                      isRobotics={["drone","robot","esp32","sensor-network"].includes(node.type)}
+                      livePoint={liveTelemetryPoints[node.id] || null}
+                    />
+                  </div>
+                )}
+
                 {/* System node configure form */}
                 {node.id === "workstation" && configuringId === node.id && (
                   <form className="infra-add-form" onSubmit={handleSaveConfigure} style={{ marginTop: "8px" }}>

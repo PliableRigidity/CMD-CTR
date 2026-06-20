@@ -38,6 +38,20 @@ def _init_db() -> None:
     conn = _conn()
     try:
         conn.executescript("""
+            CREATE TABLE IF NOT EXISTS node_telemetry_history (
+                id          TEXT PRIMARY KEY,
+                node_id     TEXT NOT NULL,
+                timestamp   TEXT NOT NULL,
+                cpu         REAL,
+                ram         REAL,
+                disk        REAL,
+                temperature REAL,
+                battery_pct REAL,
+                altitude    REAL
+            );
+            CREATE INDEX IF NOT EXISTS idx_telemetry_history_node_time
+                ON node_telemetry_history (node_id, timestamp);
+
             CREATE TABLE IF NOT EXISTS nodes (
                 id              TEXT PRIMARY KEY,
                 name            TEXT NOT NULL,
@@ -88,33 +102,167 @@ def _init_db() -> None:
             ("heading", "REAL"),
             ("mission_state", "TEXT"),
             ("imu_data", "TEXT"),
+            # Phase 10 — node identity / aliases
+            ("aliases", "TEXT"),
+            # SSH profiles
+            ("ssh_username", "TEXT"),
+            ("ssh_key_path", "TEXT"),
         ]:
             if column_name not in existing:
                 conn.execute(f"ALTER TABLE nodes ADD COLUMN {column_name} {column_type}")
+        # One-time dedup: remove UUID-id nodes that share tailscale_ip with a named seed node
+        _cleanup_duplicate_nodes(conn)
         conn.commit()
-        count = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
-        if count == 0:
-            conn.execute(
-                """INSERT INTO nodes (id, name, type, hostname, status, tags, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    "workstation",
-                    "Workstation",
-                    "workstation",
-                    "local",
-                    "unknown",
-                    '["core"]',
-                    "Primary local node — SILVIA host machine",
+        # Seed known nodes using INSERT OR IGNORE — safe to run every startup,
+        # never overwrites nodes the user has edited via the UI.
+        _SEED_NODES = [
+            {
+                "id": "workstation",
+                "name": "Workstation",
+                "type": "workstation",
+                "hostname": "local",
+                "tailscale_ip": None,
+                "tailscale_name": None,
+                "agent_url": None,
+                "status": "online",
+                "tags": '["core","silvia-host","ai","programming"]',
+                "notes": (
+                    "Primary SILVIA host — main AI workstation for programming and "
+                    "model inference. silvia-agent installed."
                 ),
+            },
+            {
+                "id": "pi-ai",
+                "name": "PI_AI",
+                "type": "raspberry-pi",
+                "hostname": "100.121.92.4",
+                "tailscale_ip": "100.121.92.4",
+                "tailscale_name": "pi-ai",
+                "agent_url": None,
+                "status": "unknown",
+                "tags": '["ai","edge","exit-node","singapore"]',
+                "notes": (
+                    "Raspberry Pi 5 with AI hardware accelerator. Runs small agents. "
+                    "Tailscale exit node to Singapore. No silvia-agent."
+                ),
+            },
+            {
+                "id": "carrera",
+                "name": "Carrera",
+                "type": "vps",
+                "hostname": "100.66.147.37",
+                "tailscale_ip": "100.66.147.37",
+                "tailscale_name": "carrera",
+                "agent_url": None,
+                "status": "unknown",
+                "tags": '["vps","web","exit-node","europe"]',
+                "notes": (
+                    "VPS for hosting simple sites. "
+                    "Tailscale exit node to Europe. No silvia-agent."
+                ),
+            },
+            {
+                "id": "nighthawk",
+                "name": "Nighthawk",
+                "type": "nas",
+                "hostname": "100.103.126.18",
+                "tailscale_ip": "100.103.126.18",
+                "tailscale_name": "nighthawk",
+                "agent_url": None,
+                "status": "unknown",
+                "tags": '["nas","storage","raspberry-pi4"]',
+                "notes": (
+                    "Raspberry Pi 4 NAS system — primary network storage node. "
+                    "No silvia-agent. Expanded role planned."
+                ),
+            },
+        ]
+        for node in _SEED_NODES:
+            conn.execute(
+                """INSERT OR IGNORE INTO nodes
+                   (id, name, type, hostname, tailscale_ip, tailscale_name,
+                    agent_url, status, tags, notes)
+                   VALUES (:id, :name, :type, :hostname, :tailscale_ip, :tailscale_name,
+                    :agent_url, :status, :tags, :notes)""",
+                node,
             )
-            conn.commit()
+        # Upgrade the old minimal workstation seed if the notes haven't been customised
+        conn.execute(
+            """UPDATE nodes SET status=?, tags=?, notes=?
+               WHERE id='workstation' AND notes='Primary local node — SILVIA host machine'""",
+            (
+                "online",
+                '["core","silvia-host","ai","programming"]',
+                (
+                    "Primary SILVIA host — main AI workstation for programming and "
+                    "model inference. silvia-agent installed."
+                ),
+            ),
+        )
+        # Seed default SSH usernames for known nodes (only when the column is still NULL —
+        # never overwrites values the user has set via the profile command).
+        _SSH_DEFAULTS = [
+            ("carrera",  "ishaan", None),
+            ("nighthawk", "ishaan", None),
+            ("pi-ai",    "ishaan", None),
+        ]
+        for _nid, _uname, _key in _SSH_DEFAULTS:
+            conn.execute(
+                "UPDATE nodes SET ssh_username=? WHERE id=? AND ssh_username IS NULL",
+                (_uname, _nid),
+            )
+        # Reset non-workstation nodes that were seeded as "online" but have never
+        # been probed — status "online" without a probe is false confidence.
+        # The probe loop runs within 60s of startup and will update to the real status.
+        conn.execute(
+            "UPDATE nodes SET status='unknown' WHERE id != 'workstation' AND last_probe_at IS NULL AND status = 'online'"
+        )
+        conn.commit()
     finally:
         conn.close()
+
+
+_UUID_ID_RE = re.compile(r'^[0-9a-f]{8}$')
+
+
+def _cleanup_duplicate_nodes(conn) -> None:
+    """Remove UUID-id nodes that share the same network address as a named (seeded) node.
+    Checks tailscale_ip match and cross-column tailscale_ip/hostname match."""
+    try:
+        rows = conn.execute("""
+            SELECT a.id, b.id FROM nodes a JOIN nodes b
+            ON (
+                (a.tailscale_ip IS NOT NULL AND a.tailscale_ip != ''
+                 AND a.tailscale_ip = b.tailscale_ip)
+                OR (a.tailscale_ip IS NOT NULL AND a.tailscale_ip != ''
+                    AND b.hostname != '' AND a.tailscale_ip = b.hostname)
+                OR (b.tailscale_ip IS NOT NULL AND b.tailscale_ip != ''
+                    AND a.hostname != '' AND b.tailscale_ip = a.hostname)
+                OR (a.hostname != '' AND a.hostname NOT IN ('local','')
+                    AND a.hostname = b.hostname AND b.hostname NOT IN ('local',''))
+            )
+            WHERE a.id < b.id
+        """).fetchall()
+        seen = set()
+        for aid, bid in rows:
+            key = (min(aid, bid), max(aid, bid))
+            if key in seen:
+                continue
+            seen.add(key)
+            a_uuid = bool(_UUID_ID_RE.match(aid))
+            b_uuid = bool(_UUID_ID_RE.match(bid))
+            if a_uuid and not b_uuid:
+                conn.execute("DELETE FROM nodes WHERE id = ?", (aid,))
+            elif b_uuid and not a_uuid:
+                conn.execute("DELETE FROM nodes WHERE id = ?", (bid,))
+    except Exception:
+        pass
 
 
 def _row_to_node(row) -> Node:
     d = dict(row)
     d["tags"] = json.loads(d.get("tags") or "[]")
+    d["aliases"] = json.loads(d.get("aliases") or "[]")
     d["services"] = json.loads(d["services"]) if d.get("services") else None
     d["capabilities"] = json.loads(d["capabilities"]) if d.get("capabilities") else None
     d["imu_data"] = json.loads(d["imu_data"]) if d.get("imu_data") else None
@@ -209,6 +357,37 @@ class NodeService:
         conn = _conn()
         try:
             conn.execute(f"UPDATE nodes SET {cols} WHERE id = ?", vals)
+            # Write to history when we have at least one metric value
+            m = metrics.model_dump()
+            if any(m.get(k) is not None for k in ("cpu", "ram", "disk", "temperature", "battery_pct", "altitude")):
+                conn.execute(
+                    """INSERT INTO node_telemetry_history
+                       (id, node_id, timestamp, cpu, ram, disk, temperature, battery_pct, altitude)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        str(uuid.uuid4())[:16],
+                        node_id,
+                        datetime.now(timezone.utc).isoformat(),
+                        m.get("cpu"),
+                        m.get("ram"),
+                        m.get("disk"),
+                        m.get("temperature"),
+                        m.get("battery_pct"),
+                        m.get("altitude"),
+                    ),
+                )
+            conn.commit()
+            return self.get_node(node_id)
+        finally:
+            conn.close()
+
+    def update_ssh_profile(self, node_id: str, username: Optional[str], key_path: Optional[str]) -> Optional[Node]:
+        conn = _conn()
+        try:
+            conn.execute(
+                "UPDATE nodes SET ssh_username=?, ssh_key_path=? WHERE id=?",
+                (username or None, key_path or None, node_id),
+            )
             conn.commit()
             return self.get_node(node_id)
         finally:
@@ -275,6 +454,35 @@ class NodeService:
             conn.close()
         return self.get_node(node_id)
 
+    def get_telemetry_history(self, node_id: str, hours: int = 24) -> list[dict]:
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=min(hours, 168))).isoformat()
+        conn = _conn()
+        try:
+            rows = conn.execute(
+                """SELECT timestamp, cpu, ram, disk, temperature, battery_pct, altitude
+                   FROM node_telemetry_history
+                   WHERE node_id = ? AND timestamp >= ?
+                   ORDER BY timestamp ASC""",
+                (node_id, cutoff),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+    def prune_telemetry_history(self) -> int:
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        conn = _conn()
+        try:
+            cur = conn.execute(
+                "DELETE FROM node_telemetry_history WHERE timestamp < ?", (cutoff,)
+            )
+            conn.commit()
+            return cur.rowcount
+        finally:
+            conn.close()
+
     def probe_all_nodes(self) -> list[Node]:
         nodes = self.list_nodes()
         results = []
@@ -318,6 +526,56 @@ class NodeService:
             cur = conn.execute("DELETE FROM nodes WHERE id = ?", (node_id,))
             conn.commit()
             return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def merge_nodes(self, source_id: str, target_id: str) -> tuple[bool, str]:
+        """Merge source into target: adds source name/aliases to target's aliases, deletes source."""
+        if source_id == "workstation":
+            return False, "Cannot merge the workstation node."
+        if source_id == target_id:
+            return False, "Cannot merge a node into itself."
+        source = self.get_node(source_id)
+        target = self.get_node(target_id)
+        if not source:
+            return False, f"Source node '{source_id}' not found."
+        if not target:
+            return False, f"Target node '{target_id}' not found."
+        new_aliases = list(dict.fromkeys(target.aliases + [source.name] + source.aliases))
+        conn = _conn()
+        try:
+            conn.execute(
+                "UPDATE nodes SET aliases = ? WHERE id = ?",
+                (json.dumps(new_aliases), target_id),
+            )
+            conn.execute("DELETE FROM nodes WHERE id = ?", (source_id,))
+            conn.commit()
+        finally:
+            conn.close()
+        return True, f"Merged '{source.name}' into '{target.name}'. Aliases: {new_aliases}"
+
+    def find_duplicate_nodes(self) -> list[dict]:
+        """Find nodes sharing the same tailscale_ip or non-empty hostname."""
+        conn = _conn()
+        try:
+            rows = conn.execute("""
+                SELECT a.id, a.name, b.id, b.name, a.tailscale_ip, a.hostname
+                FROM nodes a JOIN nodes b ON (
+                    (a.tailscale_ip IS NOT NULL AND a.tailscale_ip != ''
+                     AND a.tailscale_ip = b.tailscale_ip)
+                    OR (a.hostname != '' AND a.hostname NOT IN ('local','')
+                        AND a.hostname = b.hostname AND b.hostname NOT IN ('local',''))
+                )
+                WHERE a.id < b.id
+            """).fetchall()
+            return [
+                {
+                    "source": row[1], "source_id": row[0],
+                    "target": row[3], "target_id": row[2],
+                    "shared_ip": row[4], "shared_hostname": row[5],
+                }
+                for row in rows
+            ]
         finally:
             conn.close()
 

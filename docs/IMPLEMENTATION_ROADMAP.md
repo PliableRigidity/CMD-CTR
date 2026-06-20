@@ -771,6 +771,49 @@ Each phase adds:
 - Plugin system for integrations
 - Advanced analytics
 - Multi-user support with separate memory
+
+## Phase 11: Desktop Control & Local File Awareness
+
+Status: complete.
+
+Phase 11 makes SILVIA aware of the local workstation through registries and a local file index.
+
+Delivered:
+
+- Trusted Locations registry for important folders and projects.
+- File indexing in SQLite with automatic stale-index refresh.
+- Folder awareness commands such as `open CMD-CTR folder`, `where is Brain63`, and `show trusted locations`.
+- Application registry for safe app launches such as `open VS Code`, `launch KiCad`, and `show installed apps`.
+- Safe launch tools for folders and registered apps only.
+- Project discovery bridge from spoken project names to trusted filesystem paths.
+- Search commands for extensions, filenames, locations, and recent files.
+- Files & Applications UI in the Command Center right rail.
+
+## Phase 12C — BOM Import & Smart Inventory Ingestion
+
+- Parse KiCad-style CSV BOM files, generic CSV inventory files, KiCad schematic/project files, and simple Markdown component lists.
+- Optionally parse `.xlsx` / `.xlsm` files when `openpyxl` is installed.
+- Deduplicate components using normalized names, aliases, manufacturer, and part number.
+- Create hardware projects from BOM filenames when missing.
+- Link imported BOM components to projects as required parts.
+- Record import history and validation warnings.
+- Surface recent imports in the Hardware Board.
+
+## Phase 12D — Hardware Assistant
+
+- Add a restricted Hardware Assistant panel to the Hardware Board.
+- Support natural-language inventory, project, order, and BOM commands.
+- Keep the assistant isolated from web search, MAGI, desktop control, infrastructure, and main assistant memory.
+- Require preview confirmation before registry mutations.
+- Execute through deterministic hardware registry operations.
+
+Reference docs:
+
+- `docs/DESKTOP_CONTROL.md`
+- `docs/FILE_AWARENESS.md`
+- `docs/APPLICATION_REGISTRY.md`
+- `docs/MISSION_CONTROL_INTEGRATION.md`
+- `docs/FEATURE_MATRIX.md`
 - Cloud sync (optional)
 - Mobile and web interfaces
 - Robot control and autonomy

@@ -14,7 +14,7 @@ from backend.app.services.embedding_service import get_embedding
 
 logger = logging.getLogger(__name__)
 
-_DB_PATH  = Path("data/cmdctr.db")
+_DB_PATH  = Path(__file__).resolve().parent.parent.parent.parent / "data" / "cmdctr.db"
 _EMBED_DIM = 768
 
 

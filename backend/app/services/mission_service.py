@@ -20,11 +20,11 @@ MISSIONS: list[Mission] = [
     ),
     Mission(
         id="gamma", code="GAMMA", name="KOI",
-        description="AI-native personal finance and investment intelligence system.",
+        description="AI-native project workflow automation — turns user requirements into structured engineering progress via agent delegation.",
         status="monitoring",
-        relevance_keywords=["stock", "market", "finance", "investment", "trading", "equity",
-                            "earnings", "Fed", "interest rate", "inflation", "GDP", "economy",
-                            "IPO", "cryptocurrency", "portfolio"],
+        relevance_keywords=["KOI", "workflow", "agent", "task", "orchestration", "automation",
+                            "project manager", "delegation", "pipeline", "requirements",
+                            "engineering progress", "multi-agent"],
     ),
     Mission(
         id="delta", code="DELTA", name="University",

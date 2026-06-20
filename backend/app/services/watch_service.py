@@ -166,3 +166,34 @@ class WatchService:
             return cur.rowcount > 0
         finally:
             conn.close()
+
+    def update_alert(self, rule_key: str, message: str, severity: str | None = None) -> bool:
+        """Update the message (and optionally severity) of an active alert by rule_key."""
+        conn = _conn()
+        try:
+            if severity:
+                cur = conn.execute(
+                    "UPDATE watch_alerts SET message = ?, severity = ? WHERE rule_key = ? AND dismissed = 0",
+                    (message, severity, rule_key),
+                )
+            else:
+                cur = conn.execute(
+                    "UPDATE watch_alerts SET message = ? WHERE rule_key = ? AND dismissed = 0",
+                    (message, rule_key),
+                )
+            conn.commit()
+            return cur.rowcount > 0
+        finally:
+            conn.close()
+
+    def get_active_by_prefix(self, prefix: str) -> list[WatchAlert]:
+        """Return all active alerts whose rule_key starts with the given prefix."""
+        conn = _conn()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM watch_alerts WHERE rule_key LIKE ? AND dismissed = 0 ORDER BY created_at DESC",
+                (f"{prefix}%",),
+            ).fetchall()
+            return [_row_to_alert(r) for r in rows]
+        finally:
+            conn.close()

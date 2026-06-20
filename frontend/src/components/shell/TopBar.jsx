@@ -40,7 +40,7 @@ function StatusDot({ active }) {
   return <span className={`status-dot${active ? " is-active" : ""}`} />;
 }
 
-export default function TopBar({ mode, modeReason, voice, devices, onModeChange, onOpenIntel }) {
+export default function TopBar({ mode, modeReason, voice, devices, onModeChange, onOpenIntel, onOpenHardware, onOpenSettings }) {
   return (
     <header className="topbar panel">
       <div className="topbar__cluster topbar__cluster--left">
@@ -90,6 +90,77 @@ export default function TopBar({ mode, modeReason, voice, devices, onModeChange,
             onClick={onOpenIntel}
           >
             Intel Board
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={onOpenHardware}
+            style={{ fontSize: "0.75rem" }}
+          >
+            Hardware
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={onOpenSettings}
+            title="API Key / Authentication settings"
+            style={{ fontSize: "0.85rem", padding: "4px 8px", opacity: 0.7 }}
+          >
+            ⚙
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={() => window.open("/knowledge", "_blank", "noopener,noreferrer")}
+            title="Engineering Knowledge Graph — entity relationships across all data sources"
+            style={{ fontSize: "0.75rem" }}
+          >
+            Graph
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={() => window.open("/memory", "_blank", "noopener,noreferrer")}
+            title="Project Memory — decisions, lessons, milestones, failures"
+            style={{ fontSize: "0.75rem" }}
+          >
+            Memory
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={() => window.open("/workspace", "_blank", "noopener,noreferrer")}
+            title="Workspace Digital Twin — live operational model"
+            style={{ fontSize: "0.75rem" }}
+          >
+            Twin
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={() => window.open("/planner", "_blank", "noopener,noreferrer")}
+            title="Engineering Planner — design, plan, and create projects"
+            style={{ fontSize: "0.75rem" }}
+          >
+            Planner
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={() => window.open("/workflows", "_blank", "noopener,noreferrer")}
+            title="Workflow Review Board — approve, reject, and track change requests"
+            style={{ fontSize: "0.75rem" }}
+          >
+            Workflows
+          </button>
+          <button
+            type="button"
+            className="panel-button"
+            onClick={() => window.open("/brain63", "_blank", "noopener,noreferrer")}
+            title="Brain63 Steward — documentation health, drafts, coverage"
+            style={{ fontSize: "0.75rem" }}
+          >
+            Brain63
           </button>
           <button
             type="button"

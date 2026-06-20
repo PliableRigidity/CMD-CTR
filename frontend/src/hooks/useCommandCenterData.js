@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useVoiceLoop } from "./useVoiceLoop";
 
 import {
   clearHistory,
@@ -42,6 +43,7 @@ export function useCommandCenterData() {
   const [devices, setDevices] = useState([]);
   const [nodes, setNodes] = useState([]);
   const [watchAlerts, setWatchAlerts] = useState([]);
+  const [liveTelemetryPoints, setLiveTelemetryPoints] = useState({});
   const [actions, setActions] = useState([]);
   const [draft, setDraft] = useState("");
   const [sessionId] = useState("default-session");
@@ -50,6 +52,18 @@ export function useCommandCenterData() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const socketRef = useRef(null);
+
+  // Voice loop — ref holds the latest submitQuery so the loop never has stale closures
+  const [voiceLoopEnabled, setVoiceLoopEnabled] = useState(false);
+  const submitQueryRef = useRef(null);
+  const stableSubmit = useCallback((...args) => submitQueryRef.current?.(...args), []);
+
+  const { loopState: voiceLoopState, loopError: voiceLoopError } = useVoiceLoop({
+    sessionId,
+    onSubmit: stableSubmit,
+    isSpeaking: voice?.speaking ?? false,
+    enabled: voiceLoopEnabled,
+  });
 
   useEffect(() => {
     async function load() {
@@ -150,6 +164,18 @@ export function useCommandCenterData() {
                   : n
               )
             );
+            setLiveTelemetryPoints((prev) => ({
+              ...prev,
+              [parsed.node_id]: {
+                timestamp: parsed.timestamp,
+                cpu: parsed.cpu,
+                ram: parsed.ram,
+                disk: parsed.disk,
+                temperature: parsed.temperature,
+                battery_pct: parsed.battery_pct,
+                altitude: parsed.altitude,
+              },
+            }));
             return;
           }
           if (parsed.type === "watch_alert") {
@@ -162,6 +188,26 @@ export function useCommandCenterData() {
           if (parsed.type === "watch_resolve") {
             setWatchAlerts((current) =>
               current.filter((a) => a.rule_key !== parsed.rule_key)
+            );
+            return;
+          }
+          if (parsed.type === "node_deleted") {
+            setNodes((current) => current.filter((n) => n.id !== parsed.node_id));
+            return;
+          }
+          if (parsed.type === "node_added") {
+            setNodes((current) => [...current.filter((n) => n.id !== parsed.node.id), parsed.node]);
+            return;
+          }
+          if (
+            parsed.type === "service_added" ||
+            parsed.type === "service_updated" ||
+            parsed.type === "service_deleted"
+          ) {
+            window.dispatchEvent(
+              new CustomEvent("silvia:services_changed", {
+                detail: { node_name: parsed.node_name, service_name: parsed.service_name },
+              })
             );
             return;
           }
@@ -261,9 +307,13 @@ export function useCommandCenterData() {
     setModeReason(data.reason);
   }
 
-  async function submitQuery(value = draft) {
+  // Keep ref current every render so stableSubmit always calls latest version
+  submitQueryRef.current = submitQuery;
+
+  async function submitQuery(value = draft, opts = {}) {
     const trimmed = value.trim();
     if (!trimmed || pending) return false;
+    const metadata = opts.voice ? { voice: true } : {};
 
     setPending(true);
     setError("");
@@ -309,7 +359,7 @@ export function useCommandCenterData() {
       const SENTENCE_RE = /^.+?[.!?](?:\s|$)/s;
 
       await sendChatStream(
-        { query: trimmed, mode: "conversation", session_id: sessionId },
+        { query: trimmed, mode: "conversation", session_id: sessionId, metadata },
         (chunk) => {
           if (chunk.type === "token") {
             ttsText += chunk.token;
@@ -350,6 +400,13 @@ export function useCommandCenterData() {
                 ? { id: streamMsgId, role: "assistant", isStreaming: false, ...chunk.response }
                 : msg
             ));
+
+            // Internal board navigation — open in new tab (consistent with TopBar board buttons)
+            const nav = chunk.response?.payload?.internal_navigation;
+            if (nav?.route) {
+              const url = `${window.location.origin}${nav.route}`;
+              window.open(url, "_blank", "noopener,noreferrer");
+            }
 
           } else if (chunk.type === "done") {
             // LLM stream finished — finalize message; mark TTS handled if sentence 1 was spoken
@@ -452,6 +509,10 @@ export function useCommandCenterData() {
     window.open(`${window.location.origin}/intel`, "_blank", "noopener,noreferrer");
   }
 
+  function openHardwareBoard() {
+    window.open(`${window.location.origin}/hardware`, "_blank", "noopener,noreferrer");
+  }
+
   async function addNode(data) {
     try {
       const node = await createNode(data);
@@ -523,6 +584,7 @@ export function useCommandCenterData() {
     devices,
     nodes,
     watchAlerts,
+    liveTelemetryPoints,
     actions,
     draft,
     messages,
@@ -540,11 +602,16 @@ export function useCommandCenterData() {
     setVoiceFlags,
     clearChat,
     openIntelBoard,
+    openHardwareBoard,
     addNode,
     saveNode,
     probeNodeById,
     verifyNodeById,
     removeNode,
     dismissAlert,
+    voiceLoopEnabled,
+    setVoiceLoopEnabled,
+    voiceLoopState,
+    voiceLoopError,
   };
 }
