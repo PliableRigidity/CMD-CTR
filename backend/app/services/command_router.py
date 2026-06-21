@@ -35,6 +35,19 @@ class CommandRoute:
     timestamp: str = ""
 
 
+# ── Wake word prefix stripping ──────────────────────────────────────────────
+_WAKE_PREFIX_RE = re.compile(
+    r"^(?:hey\s+silvia|hey\s+sil|yo\s+sil(?:via)?|silvia|sil|hey\s+there)\s*,?\s*",
+    re.I,
+)
+
+
+def strip_wake_prefix(q: str) -> str:
+    """Remove wake word prefix so downstream handlers see pure intent."""
+    stripped = _WAKE_PREFIX_RE.sub("", q).strip()
+    return stripped if stripped else q
+
+
 # ── Productivity targets — excluded from app-control verb matching ───────────
 _PROD_NOUNS = (
     r"(?:my\s+)?(?:emails?|gmail|inbox|unread|calendar|schedule|events?|meetings?|"
@@ -45,7 +58,7 @@ _PROD_NOUNS = (
 
 def _is_show_routing(q: str) -> bool:
     return bool(re.match(
-        r"^(?:show\s+)?command\s+routing[\s\.\?!]*$", q, re.I
+        r"^(?:show\s+)?(?:command\s+routing|last\s+route)[\s\.\?!]*$", q, re.I
     ))
 
 
@@ -79,6 +92,24 @@ def _is_productivity(q: str) -> tuple[bool, str]:
                 r"forgotten\s+items|project\s+health|what\s+should\s+i\s+(?:focus|work)\s+on|"
                 r"good\s+morning|day\s+review|wrap\s+up|eod|what\s+did\s+i\s+accomplish)", q):
         return True, "MissionControl"
+    if re.match(r"^(?:list|show|my|what\s+are)\s+(?:my\s+)?(?:current\s+)?(?:ongoing\s+)?projects?\s*\??$", q):
+        return True, "Projects"
+    if re.match(r"^(?:what\s+(?:projects?|work)\s+(?:am\s+i|do\s+i)\s+(?:working\s+on|doing))", q):
+        return True, "Projects"
+    if re.match(r"^(?:active|blocked|paused)\s+projects?\s*\??$", q):
+        return True, "Projects"
+    if re.match(r"^(?:let'?s?\s+)?(?:work\s+on|focus\s+on|switch\s+to|working\s+on|set\s+focus\s+to)\s+", q):
+        return True, "Presence"
+    if re.match(r"^set\s+\w+\s+as\s+active\b", q):
+        return True, "Presence"
+    if re.match(r"^(?:start|begin|end|stop|wrap\s+up)\s+(?:a\s+)?(?:work\s+)?session\b", q):
+        return True, "Presence"
+    if re.match(r"^focus\s+mode\s+(?:on|off)\s*$", q):
+        return True, "Presence"
+    if re.match(r"^(?:show\s+)?(?:presence|conversation)\s+(?:status|context)\s*$", q):
+        return True, "Presence"
+    if re.match(r"^reset\s+(?:conversation\s+)?context\s*$", q):
+        return True, "Presence"
     if re.match(r"^(?:what|show|list)\s+(?:scheduled|recurring)\s+tasks?", q):
         return True, "ScheduledTasks"
     if re.match(r"^(?:schedule\s+task|disable\s+scheduled|delete\s+scheduled)", q):
@@ -93,6 +124,8 @@ def _is_productivity(q: str) -> tuple[bool, str]:
 
 
 def _is_infrastructure(q: str) -> tuple[bool, str]:
+    if re.match(r"^(?:show\s+)?ssh\s+diagnostics[\s\.\?!]*$", q):
+        return True, "SSHDiagnostics"
     if re.match(r"^(?:deep\s+system\s+check|(?:run\s+)?(?:silvia\s+)?diagnostics|"
                 r"system\s+(?:health|diagnostics)|health\s+check|check\s+all\s+systems)", q):
         return True, "Diagnostics"
@@ -187,6 +220,21 @@ _BOARD_NAMES = (
 )
 
 def _is_app_control(q: str) -> tuple[bool, str]:
+    # SSH targets — must be checked BEFORE the generic "open X" Launcher catch-all
+    if re.match(r"^(?:ssh(?:\s+into?)?|connect(?:\s+to)?)\s+\w+", q):
+        return True, "SSH"
+    if re.match(r"^(?:open\s+(?:(?:the\s+)?(?:ssh|remote)\s+)?(?:terminal|session)\s+(?:on|to))\s+", q):
+        return True, "SSH"
+    if re.match(r"^(?:open|launch)\s+(?:the\s+)?(?:ssh|remote)\s+(?:terminal|session|connection)[\s\.\?!]*$", q):
+        return True, "SSH"
+    if re.match(r"^(?:open|launch)\s+ssh[\s\.\?!]*$", q):
+        return True, "SSH"
+    if re.match(r"^ssh\s+(?:terminal|session|in)[\s\.\?!]*$", q):
+        return True, "SSH"
+    if re.match(r"^connect[\s\.\?!]*$", q):
+        return True, "SSH"
+    if re.match(r"^(?:set|update|change|configure)\s+(?:ssh\s+)?(?:username|key)\b", q):
+        return True, "SSH"
     if re.match(r"^(?:open|launch|start|run)\s+", q):
         if re.match(rf"^(?:open|launch|start|run)\s+{_PROD_NOUNS}", q, re.I):
             return False, ""
@@ -196,12 +244,6 @@ def _is_app_control(q: str) -> tuple[bool, str]:
         return True, "Launcher"
     if re.match(r"^(?:close|quit|exit)\s+", q):
         return True, "Launcher"
-    if re.match(r"^(?:ssh(?:\s+into?)?|connect(?:\s+to)?)\s+\w+", q):
-        return True, "SSH"
-    if re.match(r"^(?:open\s+(?:ssh|terminal)\s+(?:on|to))\s+", q):
-        return True, "SSH"
-    if re.match(r"^(?:set|update|change|configure)\s+(?:ssh\s+)?(?:username|key)\b", q):
-        return True, "SSH"
     if re.match(r"^(?:volume|mute|unmute|play|pause|next\s+track|prev|skip)\b", q):
         return True, "MediaControl"
     if re.match(r"^(?:set|turn)\s+(?:the\s+)?volume\b", q):
@@ -279,7 +321,7 @@ def parse_multi_targets(target_str: str) -> list[str] | None:
 
 def classify(query: str) -> CommandRoute:
     """Classify a query into exactly one category with one owner."""
-    q = query.strip()
+    q = strip_wake_prefix(query.strip())
     low = q.lower()
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -330,6 +372,36 @@ def log_route(route: CommandRoute) -> None:
         "ROUTE category=%s owner=%s confidence=%d query=%r",
         route.category, route.owner, route.confidence, route.query,
     )
+
+
+def update_last_route(handler: str, status: str = "ok") -> None:
+    """Annotate the most recent route entry with handler and response status."""
+    if _ROUTE_LOG:
+        _ROUTE_LOG[-1]["handler"] = handler
+        _ROUTE_LOG[-1]["response_status"] = status
+
+
+def format_last_route() -> str:
+    """Render the last route classification as readable text."""
+    if not _ROUTE_LOG:
+        return "No commands routed yet."
+    e = _ROUTE_LOG[-1]
+    lines = [
+        "Last Command Route",
+        "=" * 40,
+        f"Input: {e['query']}",
+        f"Classification: {e['category'].replace('_', ' ').title()}",
+        f"Owner: {e['owner']}",
+        f"Confidence: {e['confidence']}%",
+    ]
+    if e.get("handler"):
+        lines.append(f"Handler: {e['handler']}")
+    if e.get("response_status"):
+        lines.append(f"Response: {e['response_status']}")
+    if e.get("intents"):
+        targets = [i.get("target", "?") for i in e["intents"]]
+        lines.append(f"Targets: {', '.join(targets)}")
+    return "\n".join(lines)
 
 
 def get_routing_log() -> list[dict]:

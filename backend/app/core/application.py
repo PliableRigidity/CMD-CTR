@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from backend.app.api import actions, assistant, brain63, decision, desktop, devices, events, fleet, hardware, maps, memory, memory_providers, missions, mission_control, mode, nodes, observability, personal, planner, productivity, project_intelligence, projects, safety, scheduled_tasks, services, system, telegram, voice, watch, web, workflows, workspace, world
+from backend.app.api import actions, assistant, brain63, decision, desktop, devices, events, fleet, hardware, maps, memory, memory_providers, missions, mission_control, mode, nodes, observability, personal, planner, presence, productivity, project_intelligence, projects, safety, scheduled_tasks, services, system, telegram, voice, watch, web, workflows, workspace, world
 from backend.app.core.auth_middleware import AuthMiddleware
 from backend.app.models.nodes import NodeMetricsUpdate
 from backend.app.orchestration.assistant_router import AssistantPlatformRouter
@@ -565,6 +565,30 @@ async def _print_startup_health() -> None:
     except Exception:
         lines.append("  Nodes:        FAILED")
 
+    # Voice STT/TTS
+    try:
+        from backend.app.services.voice_service import _check_speaches, _check_whisper_installed
+        from backend.config import SPEACHES_BASE_URL, STT_PROVIDER, TTS_PROVIDER
+        speaches_ok, speaches_detail = _check_speaches(SPEACHES_BASE_URL)
+        whisper_ok, _ = _check_whisper_installed()
+        if STT_PROVIDER == "speaches" and speaches_ok:
+            lines.append(f"  Voice STT:    OK (Speaches @ {SPEACHES_BASE_URL})")
+        elif STT_PROVIDER == "speaches" and not speaches_ok:
+            if whisper_ok:
+                lines.append(f"  Voice STT:    WARNING (Speaches unavailable, using local Whisper)")
+            else:
+                lines.append(f"  Voice STT:    FAILED ({speaches_detail})")
+        elif whisper_ok:
+            lines.append("  Voice STT:    OK (local Whisper)")
+        else:
+            lines.append("  Voice STT:    Not configured")
+        if TTS_PROVIDER == "speaches" and speaches_ok:
+            lines.append(f"  Voice TTS:    OK (Speaches)")
+        else:
+            lines.append(f"  Voice TTS:    {'OK (Piper)' if TTS_PROVIDER == 'piper' else 'Not configured'}")
+    except Exception:
+        lines.append("  Voice:        Error during check")
+
     # Safe mode
     from backend.config import SILVIA_SAFE_MODE
     if SILVIA_SAFE_MODE:
@@ -687,4 +711,5 @@ def create_app() -> FastAPI:
     app.include_router(workflows.router, prefix="/api")
     app.include_router(memory_providers.router, prefix="/api")
     app.include_router(brain63.router, prefix="/api")
+    app.include_router(presence.router, prefix="/api")
     return app

@@ -310,6 +310,48 @@ h1, h2, h3 {
   text-transform: uppercase;
 }
 
+.topbar__nav-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.topbar__nav-sep {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--line-dim);
+  margin: 0 2px;
+}
+
+.topbar__dev-toggle {
+  font-size: 0.72rem !important;
+  opacity: 0.6;
+  transition: opacity 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.topbar__dev-toggle:hover { opacity: 1; }
+
+.topbar__dev-toggle--on {
+  opacity: 1;
+  border-color: rgba(245, 166, 35, 0.50) !important;
+  color: var(--warning) !important;
+}
+
+.panel-button--dev {
+  font-size: 0.72rem !important;
+  border-color: rgba(245, 166, 35, 0.22) !important;
+  color: var(--warning) !important;
+  opacity: 0.7;
+}
+
+.panel-button--dev:hover {
+  opacity: 1;
+  border-color: rgba(245, 166, 35, 0.50) !important;
+  background: rgba(245, 166, 35, 0.06);
+}
+
 /* ─── Main Grid ────────────────────────────────────────────────────────────── */
 .command-grid {
   display: grid;

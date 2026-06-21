@@ -40,7 +40,36 @@ function StatusDot({ active }) {
   return <span className={`status-dot${active ? " is-active" : ""}`} />;
 }
 
+const PRIMARY_NAV = [
+  { label: "Assistant",  href: "/",         self: true },
+  { label: "Projects",   href: "/workspace" },
+  { label: "Hardware",   href: "/hardware" },
+];
+
+const ADVANCED_NAV = [
+  { label: "Graph",      href: "/knowledge" },
+  { label: "Memory",     href: "/memory" },
+  { label: "Twin",       href: "/workspace" },
+  { label: "Planner",    href: "/planner" },
+  { label: "Workflows",  href: "/workflows" },
+  { label: "Brain63",    href: "/brain63" },
+  { label: "Voice",      href: "/voice" },
+];
+
 export default function TopBar({ mode, modeReason, voice, devices, onModeChange, onOpenIntel, onOpenHardware, onOpenSettings }) {
+  const [devMode, setDevMode] = useState(() => localStorage.getItem("silvia_dev_mode") === "true");
+
+  function toggleDevMode() {
+    const next = !devMode;
+    setDevMode(next);
+    localStorage.setItem("silvia_dev_mode", String(next));
+  }
+
+  function navTo(item) {
+    if (item.self) return;
+    window.open(`${window.location.origin}${item.href}`, "_blank", "noopener,noreferrer");
+  }
+
   return (
     <header className="topbar panel">
       <div className="topbar__cluster topbar__cluster--left">
@@ -83,22 +112,27 @@ export default function TopBar({ mode, modeReason, voice, devices, onModeChange,
       </div>
 
       <div className="topbar__actions">
-        <div style={{ display: "flex", gap: "6px" }}>
-          <button
-            type="button"
-            className="panel-button panel-button--accent"
-            onClick={onOpenIntel}
-          >
-            Intel Board
-          </button>
-          <button
-            type="button"
-            className="panel-button"
-            onClick={onOpenHardware}
-            style={{ fontSize: "0.75rem" }}
-          >
-            Hardware
-          </button>
+        <div className="topbar__nav-row">
+          {/* Primary navigation */}
+          {PRIMARY_NAV.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className={`panel-button${item.self ? " panel-button--accent" : ""}`}
+              onClick={() => item.self ? null : navTo(item)}
+              style={item.self ? { cursor: "default" } : {}}
+            >
+              {item.label}
+            </button>
+          ))}
+
+          {/* Separator */}
+          <span className="topbar__nav-sep" />
+
+          {/* Intel (optional, always visible) */}
+          <button type="button" className="panel-button" onClick={onOpenIntel}>Intel</button>
+
+          {/* Settings */}
           <button
             type="button"
             className="panel-button"
@@ -108,76 +142,28 @@ export default function TopBar({ mode, modeReason, voice, devices, onModeChange,
           >
             ⚙
           </button>
+
+          {/* Dev Mode toggle */}
           <button
             type="button"
-            className="panel-button"
-            onClick={() => window.open("/knowledge", "_blank", "noopener,noreferrer")}
-            title="Engineering Knowledge Graph — entity relationships across all data sources"
-            style={{ fontSize: "0.75rem" }}
+            className={`panel-button topbar__dev-toggle${devMode ? " topbar__dev-toggle--on" : ""}`}
+            onClick={toggleDevMode}
+            title={devMode ? "Developer Mode ON — click to hide advanced boards" : "Developer Mode OFF — click to show advanced boards"}
           >
-            Graph
+            {devMode ? "◆ Dev" : "◇ Dev"}
           </button>
-          <button
-            type="button"
-            className="panel-button"
-            onClick={() => window.open("/memory", "_blank", "noopener,noreferrer")}
-            title="Project Memory — decisions, lessons, milestones, failures"
-            style={{ fontSize: "0.75rem" }}
-          >
-            Memory
-          </button>
-          <button
-            type="button"
-            className="panel-button"
-            onClick={() => window.open("/workspace", "_blank", "noopener,noreferrer")}
-            title="Workspace Digital Twin — live operational model"
-            style={{ fontSize: "0.75rem" }}
-          >
-            Twin
-          </button>
-          <button
-            type="button"
-            className="panel-button"
-            onClick={() => window.open("/planner", "_blank", "noopener,noreferrer")}
-            title="Engineering Planner — design, plan, and create projects"
-            style={{ fontSize: "0.75rem" }}
-          >
-            Planner
-          </button>
-          <button
-            type="button"
-            className="panel-button"
-            onClick={() => window.open("/workflows", "_blank", "noopener,noreferrer")}
-            title="Workflow Review Board — approve, reject, and track change requests"
-            style={{ fontSize: "0.75rem" }}
-          >
-            Workflows
-          </button>
-          <button
-            type="button"
-            className="panel-button"
-            onClick={() => window.open("/brain63", "_blank", "noopener,noreferrer")}
-            title="Brain63 Steward — documentation health, drafts, coverage"
-            style={{ fontSize: "0.75rem" }}
-          >
-            Brain63
-          </button>
-          <button
-            type="button"
-            className="panel-button"
-            onClick={() => window.open("/voice", "_blank", "noopener,noreferrer")}
-            title={`STT ${voice?.stt_available ? "ready" : "unavail"} · TTS ${voice?.tts_available ? "ready" : "unavail"}`}
-            style={{
-              borderColor: voice?.stt_available && voice?.tts_available
-                ? "rgba(0,255,136,0.35)"
-                : "rgba(255,59,59,0.40)",
-              color: voice?.stt_available && voice?.tts_available
-                ? "var(--success)"
-                : "var(--danger)",
-            }}
-          >
-            Voice {voice?.stt_available && voice?.tts_available ? "●" : "○"}
-          </button>
+
+          {/* Advanced navigation (only when dev mode is on) */}
+          {devMode && ADVANCED_NAV.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className="panel-button panel-button--dev"
+              onClick={() => navTo(item)}
+            >
+              {item.label}
+            </button>
+          ))}
         </div>
         <p className="mode-reason">{modeReason}</p>
       </div>

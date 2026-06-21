@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { animate } from "animejs";
 import { synthesizeSpeech, transcribeAudio, getWakeWsUrl } from "../../lib/api";
 import WaveformVisualizer from "../voice/WaveformVisualizer";
+import VoiceOrb from "../voice/VoiceOrb";
 import RichOutput from "./RichOutput";
 
 function MessageBubble({ message, index }) {
@@ -150,6 +151,8 @@ export default function ConversationPanel({
   const inputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
+  const ttsSourceRef = useRef(null);
+  const ttsCtxRef = useRef(null);
 
   const [stream, setStream] = useState(null);
   // Local recording state machine: "idle" | "recording" | "processing"
@@ -294,7 +297,7 @@ export default function ConversationPanel({
       ws.onmessage = (e) => {
         try {
           const msg = JSON.parse(e.data);
-          if (msg.wake && recordingStateRef.current === "idle" && !pendingRef.current && !speakingRef.current) {
+          if (msg.wake && msg.accepted && recordingStateRef.current === "idle" && !pendingRef.current && !speakingRef.current) {
             startListeningRef.current?.();
           }
         } catch { /* ignore parse errors */ }
@@ -521,16 +524,37 @@ export default function ConversationPanel({
     try {
       const buffer = await synthesizeSpeech(speechText);
       const ctx = new AudioContext();
+      ttsCtxRef.current = ctx;
       const decoded = await ctx.decodeAudioData(buffer);
       const src = ctx.createBufferSource();
+      ttsSourceRef.current = src;
       src.buffer = decoded;
       src.connect(ctx.destination);
-      src.onended = () => { ctx.close(); onVoiceStateChange?.({ speaking: false }); };
+      src.onended = () => {
+        ttsSourceRef.current = null;
+        ttsCtxRef.current = null;
+        ctx.close();
+        onVoiceStateChange?.({ speaking: false });
+      };
       src.start();
     } catch (err) {
+      ttsSourceRef.current = null;
+      ttsCtxRef.current = null;
       await onVoiceStateChange?.({ speaking: false });
       onError?.(`TTS failed: ${err.message}`);
     }
+  }
+
+  function stopSpeaking() {
+    if (ttsSourceRef.current) {
+      try { ttsSourceRef.current.stop(); } catch {}
+      ttsSourceRef.current = null;
+    }
+    if (ttsCtxRef.current) {
+      try { ttsCtxRef.current.close(); } catch {}
+      ttsCtxRef.current = null;
+    }
+    onVoiceStateChange?.({ speaking: false });
   }
 
   function _flashExec() {
@@ -563,11 +587,31 @@ export default function ConversationPanel({
   return (
     <section className="panel conversation-panel">
       <div className="panel-heading">
-        <div>
-          <p className="eyebrow">Mission Core / Assistant Bus</p>
-          <h2>Assistant Channel</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <VoiceOrb
+            state={
+              isSpeaking ? "speaking"
+              : pending ? "thinking"
+              : isRecording ? "recording"
+              : isProcessing ? "processing"
+              : voiceLoopEnabled ? voiceLoopState
+              : wakeWordMode ? "listening"
+              : conversationMode ? "listening"
+              : "idle"
+            }
+            size={28}
+            showLabel={false}
+            onClick={isSpeaking ? stopSpeaking : undefined}
+          />
+          <div>
+            <p className="eyebrow">Mission Core / Assistant Bus</p>
+            <h2>Assistant Channel</h2>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {isSpeaking && (
+            <button type="button" onClick={stopSpeaking} className="btn-ghost-sm" style={{ color: "var(--danger)" }}>STOP</button>
+          )}
           {onClear && (
             <button type="button" onClick={onClear} className="btn-ghost-sm">CLEAR</button>
           )}
@@ -590,13 +634,22 @@ export default function ConversationPanel({
           <span style={{ color: "var(--muted)" }}>⟳ CONV STANDBY</span>
         )}
         {voiceLoopEnabled && voiceLoopState === "listening" && (
-          <span style={{ color: "var(--accent-warm)", animation: "pulse 2s infinite" }}>⊛ LOOP ARMED</span>
+          <span style={{ color: "var(--accent-warm)", animation: "pulse 2s infinite" }}>⊛ LOOP LISTENING</span>
+        )}
+        {voiceLoopEnabled && voiceLoopState === "wake_detected" && (
+          <span style={{ color: "var(--accent)" }}>⊛ WAKE DETECTED</span>
+        )}
+        {voiceLoopEnabled && voiceLoopState === "armed" && (
+          <span style={{ color: "var(--accent-warm)" }}>⊛ ARMED — speak now</span>
         )}
         {voiceLoopEnabled && voiceLoopState === "recording" && (
           <span style={{ color: "var(--danger)" }}>⊛ LOOP REC</span>
         )}
         {voiceLoopEnabled && voiceLoopState === "processing" && (
           <span style={{ color: "var(--accent)" }}>⊛ LOOP TX</span>
+        )}
+        {voiceLoopEnabled && voiceLoopState === "cooldown" && (
+          <span style={{ color: "var(--muted)" }}>⊛ COOLDOWN</span>
         )}
         {voiceLoopEnabled && voiceLoopState === "error" && (
           <span style={{ color: "var(--danger)" }}>⊛ LOOP ERR</span>

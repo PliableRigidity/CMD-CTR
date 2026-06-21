@@ -1,6 +1,7 @@
 """Node registry tools — lookup, probe, update, delete, SSH, verify."""
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -10,8 +11,12 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
+logger = logging.getLogger("silvia.node_tool")
+
 _SAFE_USERNAME = re.compile(r"^[a-zA-Z0-9_.\-]{1,64}$")
 _SAFE_HOST = re.compile(r"^[a-zA-Z0-9_.\-]{1,253}$")
+
+_last_ssh_launch: dict = {}
 
 # Windows Terminal path — shutil.which("wt") fails when the backend process PATH
 # does not include %LOCALAPPDATA%\Microsoft\WindowsApps (common when launched by
@@ -22,6 +27,17 @@ def _find_wt() -> Optional[str]:
         return via_which
     candidate = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WindowsApps\wt.exe")
     return candidate if os.path.isfile(candidate) else None
+
+
+def _resolve_terminal_provider() -> str:
+    from backend.config import TERMINAL_PROVIDER
+    pref = TERMINAL_PROVIDER.lower().strip()
+    if pref == "windows_terminal":
+        return "windows_terminal" if _find_wt() else "cmd"
+    if pref in ("cmd", "powershell"):
+        return pref
+    wt = _find_wt()
+    return "windows_terminal" if wt else "cmd"
 
 
 def _make_result(ok: bool, tool: str, node: str | None, summary: str, data, error: str | None) -> dict:
@@ -325,23 +341,52 @@ def open_ssh_session(name: str, username: str, key_path: Optional[str] = None) -
     ssh_cmd_display = " ".join(ssh_args)
     title = f"SSH — {node.name}"
 
+    provider = _resolve_terminal_provider()
+    launch_cmd: list[str] = []
+    proc: subprocess.Popen | None = None
+    creation_flags = 0
+
     try:
-        wt = _find_wt()
-        if wt:
-            # Use cmd.exe /c start so the window opens in the foreground.
-            # start "title" "program" args — the first quoted arg is the window title.
-            subprocess.Popen(
-                ["cmd.exe", "/c", "start", title, wt,
-                 "new-tab", "--title", title, "--"] + ssh_args,
-                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-            )
+        if provider == "windows_terminal":
+            wt = _find_wt()
+            launch_cmd = [
+                "cmd.exe", "/c", "start", title, wt,
+                "new-tab", "--title", title, "--",
+            ] + ssh_args
+            creation_flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        elif provider == "powershell":
+            launch_cmd = [
+                "powershell.exe", "-NoExit", "-Command",
+            ] + ssh_args
+            creation_flags = subprocess.CREATE_NEW_CONSOLE
         else:
-            # Fallback: plain cmd.exe console window
-            subprocess.Popen(
-                ["cmd.exe", "/k"] + ssh_args,
-                creationflags=subprocess.CREATE_NEW_CONSOLE,
-            )
+            launch_cmd = ["cmd.exe", "/k"] + ssh_args
+            creation_flags = subprocess.CREATE_NEW_CONSOLE
+
+        logger.info("SSH launch: provider=%s cmd=%s", provider, launch_cmd)
+
+        proc = subprocess.Popen(
+            launch_cmd,
+            creationflags=creation_flags,
+        )
+    except FileNotFoundError as exc:
+        _record_ssh_launch(node.name, host, username, ssh_cmd_display, provider, False, str(exc))
+        return _make_result(
+            False, "ssh_node", node.name,
+            f"Terminal executable not found: {exc}",
+            None,
+            f"Terminal provider '{provider}' not available: {exc}",
+        )
+    except OSError as exc:
+        _record_ssh_launch(node.name, host, username, ssh_cmd_display, provider, False, str(exc))
+        return _make_result(
+            False, "ssh_node", node.name,
+            f"Failed to launch terminal: {exc}",
+            None,
+            str(exc),
+        )
     except Exception as exc:
+        _record_ssh_launch(node.name, host, username, ssh_cmd_display, provider, False, str(exc))
         return _make_result(
             False, "ssh_node", node.name,
             f"Failed to open terminal: {exc}",
@@ -349,14 +394,64 @@ def open_ssh_session(name: str, username: str, key_path: Optional[str] = None) -
             str(exc),
         )
 
+    # Verify the process actually started
+    time.sleep(0.5)
+    exit_code = proc.poll()
+
+    pid = proc.pid
+    launched = exit_code is None or exit_code == 0
     key_note = f", key: {resolved_key}" if resolved_key else ""
+
+    if not launched:
+        error_msg = f"Terminal process exited immediately (code {exit_code})"
+        logger.warning("SSH launch failed: %s cmd=%s", error_msg, launch_cmd)
+        _record_ssh_launch(node.name, host, username, ssh_cmd_display, provider, False, error_msg)
+        return _make_result(
+            False, "ssh_node", node.name,
+            f"SSH terminal launch failed: {error_msg}",
+            {"host": host, "username": username, "command": ssh_cmd_display,
+             "provider": provider, "exit_code": exit_code},
+            error_msg,
+        )
+
+    logger.info("SSH launched: pid=%d node=%s cmd=%s", pid, node.name, ssh_cmd_display)
+    _record_ssh_launch(node.name, host, username, ssh_cmd_display, provider, True, None, pid)
     return _make_result(
         True, "ssh_node", node.name,
-        f"Opened SSH terminal -> {node.name} ({username}@{host}, source: {source}{key_note})",
+        f"SSH terminal launched -> {node.name} ({username}@{host}, source: {source}{key_note})",
         {"host": host, "username": username, "source": source, "command": ssh_cmd_display,
-         "key_path": resolved_key, "wt_available": bool(wt)},
+         "key_path": resolved_key, "provider": provider, "process_id": pid, "launched": True},
         None,
     )
+
+
+def _record_ssh_launch(node, host, username, command, provider, ok, error=None, pid=None):
+    global _last_ssh_launch
+    _last_ssh_launch = {
+        "node": node,
+        "host": host,
+        "username": username,
+        "command": command,
+        "provider": provider,
+        "launched": ok,
+        "process_id": pid,
+        "error": error,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def get_ssh_diagnostics() -> dict:
+    provider = _resolve_terminal_provider()
+    wt = _find_wt()
+    return {
+        "terminal_provider": provider,
+        "wt_available": bool(wt),
+        "wt_path": wt,
+        "cmd_available": bool(shutil.which("cmd.exe") or os.path.isfile(r"C:\Windows\System32\cmd.exe")),
+        "powershell_available": bool(shutil.which("powershell.exe")),
+        "ssh_available": bool(shutil.which("ssh")),
+        "last_launch": _last_ssh_launch or None,
+    }
 
 
 def _resolve_key_path(key_path: Optional[str]) -> Optional[str]:

@@ -14,7 +14,7 @@ from backend.app.models.assistant import (
     CommandLogEntry,
 )
 from backend.app.services.action_service import ActionService
-from backend.app.services.command_router import classify, log_route, format_routing_log
+from backend.app.services.command_router import classify, log_route, format_routing_log, format_last_route, strip_wake_prefix, update_last_route
 from backend.app.services.maps_service import MapsService
 from backend.app.services.capability_verification import (
     CapabilityExecutionResult,
@@ -295,7 +295,7 @@ class ConversationService:
             return _stamp(memory_response)
 
         # ── Command Router v2: classify before execution ────────────────────
-        _raw_q = request.query.strip()
+        _raw_q = strip_wake_prefix(request.query.strip())
         _route = classify(_raw_q)
         log_route(_route)
         await self._emit_tool(
@@ -303,11 +303,32 @@ class ConversationService:
             f"Category={_route.category} Owner={_route.owner} Confidence={_route.confidence}%",
         )
 
-        # "show command routing" — display classification log
+        # "show command routing" / "show last route" — display classification log
         if _route.owner == "RoutingLog":
-            _rl_text = format_routing_log()
+            _is_last = bool(re.match(r"^(?:show\s+)?last\s+route", _raw_q, re.I))
+            _rl_text = format_last_route() if _is_last else format_routing_log()
             _persist(_rl_text)
+            update_last_route("RoutingLog", "ok")
             return _stamp(self._simple_response("Command Routing", _rl_text))
+
+        # ── Presence Mode (Phase 16C) ─────────────────────────────────────
+        from backend.app.services.presence_service import get_presence
+        _presence = get_presence()
+        _presence_resp = await self._handle_presence_command(_raw_q, _presence, request)
+        if _presence_resp is not None:
+            _persist(_presence_resp.answer)
+            return _stamp(_presence_resp)
+        # Record interaction for follow-up window
+        _presence._last_interaction = __import__("time").time()
+        # ──────────────────────────────────────────────────────────────────
+
+        # ── Context-aware SSH — resolve target from presence when no node in query ──
+        if _route.owner == "SSH":
+            _ssh_resp = await self._handle_contextual_ssh(_raw_q, _presence, request)
+            if _ssh_resp is not None:
+                _persist(_ssh_resp.answer)
+                return _stamp(_ssh_resp)
+        # ──────────────────────────────────────────────────────────────────
 
         # Pre-social interceptors: capability queries and project queries both produce
         # grounded responses and must not land in the ambiguous-social bucket.
@@ -537,6 +558,41 @@ class ConversationService:
             if _rd:
                 _persist(_rd.answer)
                 return _stamp(_rd)
+        if re.match(r"^(?:show\s+)?ssh\s+diagnostics[\s\.\?!]*$", _diag_lowered):
+            from backend.app.tools.node_tool import get_ssh_diagnostics
+            diag = get_ssh_diagnostics()
+            lines = [
+                "**SSH Diagnostics**",
+                "",
+                f"Terminal Provider: {diag['terminal_provider']}",
+                f"Windows Terminal: {'Available' if diag['wt_available'] else 'Not found'}"
+                + (f" ({diag['wt_path']})" if diag['wt_path'] else ""),
+                f"cmd.exe: {'Available' if diag['cmd_available'] else 'Not found'}",
+                f"PowerShell: {'Available' if diag['powershell_available'] else 'Not found'}",
+                f"SSH client: {'Available' if diag['ssh_available'] else 'Not found'}",
+            ]
+            last = diag.get("last_launch")
+            if last:
+                lines += [
+                    "",
+                    "**Last Launch**",
+                    f"Node: {last['node']}",
+                    f"Host: {last.get('username', '?')}@{last['host']}",
+                    f"Command: `{last['command']}`",
+                    f"Provider: {last['provider']}",
+                    f"Result: {'Launched' if last['launched'] else 'Failed'}",
+                ]
+                if last.get("process_id"):
+                    lines.append(f"PID: {last['process_id']}")
+                if last.get("error"):
+                    lines.append(f"Error: {last['error']}")
+                lines.append(f"Time: {last['timestamp']}")
+            else:
+                lines += ["", "No SSH launches in this session."]
+            _ssh_diag_text = "\n".join(lines)
+            _persist(_ssh_diag_text)
+            update_last_route("SSHDiagnostics", "ok")
+            return _stamp(self._simple_response("SSH Diagnostics", _ssh_diag_text))
         # ──────────────────────────────────────────────────────────────────────
 
         # ── Capability Verification Layer ─────────────────────────────────────
@@ -563,7 +619,7 @@ class ConversationService:
         # ── Social Conversation Engine ─────────────────────────────────────────
         # Runs BEFORE all tool routing. Social messages bypass every tool,
         # every planner call, and Hermes entirely. Conversation is first-class.
-        _quick_reply, _social_goal = route_social(request.query)
+        _quick_reply, _social_goal = route_social(_raw_q)
 
         if _quick_reply is not None:
             _persist(_quick_reply)
@@ -574,10 +630,10 @@ class ConversationService:
             if self.memory_service:
                 history = self.memory_service.get_ollama_messages(request.session_id, limit=10)
             self.state.note_query(
-                request.query, _social_goal, is_builder=is_builder_topic(request.query)
+                _raw_q, _social_goal, is_builder=is_builder_topic(_raw_q)
             )
             answer = await self._generate_response(
-                request.query, history,
+                _raw_q, history,
                 voice=bool(request.metadata.get("voice")),
                 goal=_social_goal,
             )
@@ -621,15 +677,15 @@ class ConversationService:
         # Multi-step execution via Hermes
         if self.execution_engine is not None:
             from backend.app.orchestration.execution_engine import is_multistep
-            if is_multistep(request.query):
-                exec_response = await self.execution_engine.run(request.query, request)
+            if is_multistep(_raw_q):
+                exec_response = await self.execution_engine.run(_raw_q, request)
                 if exec_response is not None:
                     _persist(exec_response.answer)
                     return _stamp(exec_response)
 
         # Web search gated by Command Router — only fires when classified as web_search
         use_web = _route.category == "web_search" or request.metadata.get("use_web") is True
-        tool_decision = await plan(request.query, allow_web=use_web)
+        tool_decision = await plan(_raw_q, allow_web=use_web)
         if tool_decision.get("action") in ("call_tool", "call_tools"):
             tool_response = await self._execute_plan(tool_decision, request)
             if tool_response is not None:
@@ -640,17 +696,17 @@ class ConversationService:
         # Last chance to refuse before the LLM generates a free-text answer.
         # If the query asks for infrastructure facts about a specific node,
         # refuse rather than letting the LLM fabricate an answer.
-        _llm_guard = guard_llm_fallback(request.query, self._verification)
+        _llm_guard = guard_llm_fallback(_raw_q, self._verification)
         if _llm_guard is not None:
             await self._emit_tool(
                 "[VERIFICATION] LLM guard",
-                f"Blocked LLM fabrication: {request.query}",
+                f"Blocked LLM fabrication: {_raw_q}",
                 "warning",
             )
             from backend.app.services.execution_ledger import get_ledger
             get_ledger().log_execution(
-                intent=request.query, tool="llm_guard", status="intercepted",
-                message=f"Anti-hallucination: blocked LLM answer for '{request.query}'",
+                intent=_raw_q, tool="llm_guard", status="intercepted",
+                message=f"Anti-hallucination: blocked LLM answer for '{_raw_q}'",
             )
             _persist(_llm_guard)
             return _stamp(self._simple_response("No Verified Data", _llm_guard))
@@ -662,21 +718,21 @@ class ConversationService:
         if use_web and self.web_service is not None:
             search_response = await self.web_service.search(
                 SearchRequest(
-                    query=request.query,
-                    category=request.metadata.get("web_category", self._infer_search_category(request.query)),
+                    query=_raw_q,
+                    category=request.metadata.get("web_category", self._infer_search_category(_raw_q)),
                     limit=4,
                 )
             )
             sources = self.web_service.to_sources(search_response)
             answer = await self._generate_grounded_answer(
-                request.query, sources, voice=bool(request.metadata.get("voice"))
+                _raw_q, sources, voice=bool(request.metadata.get("voice"))
             )
         else:
             if self.memory_service:
                 history = self.memory_service.get_ollama_messages(request.session_id, limit=10)
-            self.state.note_query(request.query, None, is_builder=is_builder_topic(request.query))
+            self.state.note_query(_raw_q, None, is_builder=is_builder_topic(_raw_q))
             answer = await self._generate_response(
-                request.query, history, voice=bool(request.metadata.get("voice")),
+                _raw_q, history, voice=bool(request.metadata.get("voice")),
                 goal=None,
             )
 
@@ -2402,36 +2458,8 @@ class ConversationService:
                         f"Username for {node.name} ({host})? Reply with your username, or 'cancel' to abort.\n"
                         f"Tip: run 'set ssh username for {node.name} to <username>' to avoid this prompt.",
                     )
-                await self._emit_tool("[TOOL] ssh_node", f"Opening SSH: {username}@{host} ({node.name})")
-                from backend.app.tools.node_tool import open_ssh_session
-                result = open_ssh_session(node_name, username)
-                await self._emit_tool("[TOOL] ssh_node", result["summary"], "info" if result["ok"] else "error")
-                # Record verification result
-                ver_result = CapabilityExecutionResult(
-                    success=result["ok"],
-                    executed=result["ok"],
-                    source="ssh_terminal",
-                    raw_output=result.get("summary", ""),
-                    timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    node=node.name,
-                    capability="ssh_session",
-                    tool="ssh_node",
-                    error=result.get("error", "") if not result["ok"] else "",
-                )
-                self._verification.record_result(ver_result)
-                self._last_tool_ok = result["ok"]
-                if result["ok"]:
-                    self._verification.record_ssh_terminal(node.name)
-                    await self._emit_tool("[VERIFICATION] ssh_terminal", f"Recorded SSH terminal to {node.name}", "info")
-                    d = result.get("data", {})
-                    key_note = f" using key `{d['key_path']}`" if d.get("key_path") else ""
-                    answer = (
-                        f"SSH terminal opened — {node.name} as **{username}**{key_note}.\n\n"
-                        f"**Note:** This is an interactive terminal window. "
-                        f"I cannot run commands through it — type commands directly in the SSH window."
-                    )
-                else:
-                    answer = f"Could not open SSH: {result['error']}"
+                result = await self._execute_ssh_node(node_name, username, source="direct")
+                answer = self._format_ssh_result(result)
                 return self._node_response("SSH Session" if result["ok"] else "SSH Failed", answer, result)
 
             if name == "update_ssh_profile":
@@ -3119,7 +3147,7 @@ class ConversationService:
             "messages": messages,
             "stream": False,
             "keep_alive": KEEP_ALIVE,
-            "options": {"num_predict": 200, "temperature": 0.35, "num_ctx": 2048},
+            "options": {"num_predict": 400, "temperature": 0.35, "num_ctx": 4096},
         }
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
@@ -3403,6 +3431,402 @@ class ConversationService:
                 return self._simple_response("Entity Info", answer)
 
         return None
+
+    # ── Presence Mode (Phase 16C) ───────────────────────────────────────────
+    _WORK_ON_RE = re.compile(
+        r"^(?:let'?s?\s+)?(?:work\s+on|focus\s+on|switch\s+to|working\s+on|set\s+focus\s+to)\s+(?:the\s+)?(?P<project>.+?)(?:\s+today)?[\.\?!]?$",
+        re.I,
+    )
+    _SET_ACTIVE_RE = re.compile(
+        r"^set\s+(?P<project>.+?)\s+as\s+active(?:\s+(?P<rest>.*))?[\.\?!]?$",
+        re.I,
+    )
+    _WORK_SESSION_START_RE = re.compile(
+        r"^(?:start\s+(?:a\s+)?work\s+session|begin\s+(?:work\s+)?session)(?:\s+(?:on|for)\s+(?P<project>.+?))?[\.\?!]?$",
+        re.I,
+    )
+    _COMPOUND_ACTION_RE = re.compile(
+        r"^(?P<target>.+?)\s*(?:,\s*(?:and\s+)?|\s+and\s+)"
+        r"(?P<action>(?:open|launch|start|run|ssh|connect|show|close|navigate)\s+.+)$",
+        re.I,
+    )
+    _WORK_SESSION_END_RE = re.compile(
+        r"^(?:end\s+(?:work\s+)?session|stop\s+(?:work\s+)?session|wrap\s+up\s+session|session\s+done)[\.\?!]?$",
+        re.I,
+    )
+    _FOCUS_ON_RE = re.compile(r"^focus\s+mode\s+on[\.\?!]?$", re.I)
+    _FOCUS_OFF_RE = re.compile(r"^focus\s+mode\s+off[\.\?!]?$", re.I)
+    _PRESENCE_STATUS_RE = re.compile(
+        r"^(?:show\s+)?(?:presence|conversation)\s+(?:status|context)[\.\?!]?$", re.I,
+    )
+    _RESET_CONTEXT_RE = re.compile(
+        r"^reset\s+(?:conversation\s+)?context[\.\?!]?$", re.I,
+    )
+
+    async def _handle_presence_command(self, raw: str, presence, request) -> "AssistantResponse | None":
+        m = self._WORK_ON_RE.match(raw)
+        if m:
+            project_raw = m.group("project").strip()
+
+            # Split compound intents: "nighthawk, open the ssh terminal"
+            compound = self._COMPOUND_ACTION_RE.match(project_raw)
+            if compound:
+                project = re.sub(r"\s+today$", "", compound.group("target").strip().rstrip(","), flags=re.I)
+                action_clause = compound.group("action").strip()
+            else:
+                project = project_raw
+                action_clause = None
+
+            presence.set_project(project)
+            presence.record_action(f"Set active project: {project}")
+
+            from backend.app.services.project_registry import find_project
+            proj_info = find_project(project)
+            is_node = False
+            if proj_info and proj_info.get("notes"):
+                is_node = any("node" in n.lower() for n in proj_info["notes"])
+            if is_node:
+                presence.set_node(project)
+
+            await self._emit_tool("[PRESENCE]", f"Active project: {project}")
+
+            if action_clause:
+                action_result = await self._execute_compound_action(
+                    action_clause, project, is_node, request,
+                )
+                if action_result:
+                    answer = f"**{project}** is now active. {action_result}"
+                    update_last_route("PresenceManager+Action", "Compound")
+                    return self._simple_response("Project Focus + Action", answer)
+
+            if is_node:
+                answer = (
+                    f"Setting **{project}** as the active workspace.\n\n"
+                    f"I can open SSH, show node status, or review recent activity."
+                )
+            elif proj_info:
+                answer = (
+                    f"Setting **{project}** as the active workspace.\n\n"
+                    f"I can start a work session, show project tasks, or review recent decisions."
+                )
+            else:
+                answer = (
+                    f"Setting **{project}** as the active workspace.\n\n"
+                    f"All follow-up questions will be scoped to {project} until you switch."
+                )
+
+            update_last_route("PresenceManager", "Project Focus")
+            return self._simple_response("Project Focus", answer)
+
+        # "set cyberdeck as active and open fusion"
+        m = self._SET_ACTIVE_RE.match(raw)
+        if m:
+            project = m.group("project").strip()
+            rest = (m.group("rest") or "").strip()
+            action_clause = None
+            if rest:
+                rest_m = re.match(r"^(?:,?\s*(?:and\s+)?)?(?P<action>(?:open|launch|start|run|ssh|connect|show)\s+.+)$", rest, re.I)
+                if rest_m:
+                    action_clause = rest_m.group("action").strip()
+
+            presence.set_project(project)
+            presence.record_action(f"Set active project: {project}")
+
+            from backend.app.services.project_registry import find_project as _fp2
+            proj_info = _fp2(project)
+            is_node = bool(proj_info and proj_info.get("notes") and any("node" in n.lower() for n in proj_info["notes"]))
+
+            await self._emit_tool("[PRESENCE]", f"Active project: {project}")
+
+            if action_clause:
+                action_result = await self._execute_compound_action(action_clause, project, is_node, request)
+                if action_result:
+                    answer = f"**{project}** is now active. {action_result}"
+                    update_last_route("PresenceManager+Action", "Compound")
+                    return self._simple_response("Project Focus + Action", answer)
+
+            answer = f"Setting **{project}** as the active workspace."
+            update_last_route("PresenceManager", "Project Focus")
+            return self._simple_response("Project Focus", answer)
+
+        m = self._WORK_SESSION_START_RE.match(raw)
+        if m:
+            project_raw = (m.group("project") or "").strip() or None
+
+            # Split compound intents in work session too
+            if project_raw:
+                compound = self._COMPOUND_ACTION_RE.match(project_raw)
+                if compound:
+                    project_raw = compound.group("target").strip().rstrip(",")
+                    action_clause = compound.group("action").strip()
+                else:
+                    action_clause = None
+            else:
+                action_clause = None
+            project = project_raw
+            result = presence.start_work_session(project)
+            proj = result["project"]
+            # Generate a briefing
+            try:
+                from backend.app.services.mission_control_service import MissionControlService
+                mc = MissionControlService()
+                briefing = mc.morning_briefing()
+                brief_text = briefing.get("summary", "")
+                tasks = briefing.get("tasks", [])
+                task_text = "\n".join(f"  - {t.get('title', t)}" for t in tasks[:5]) if tasks else "  No pending tasks."
+                answer = (
+                    f"Work session started on **{proj}**.\n\n"
+                    f"**Pending tasks:**\n{task_text}\n\n"
+                    f"What would you like to work on first?"
+                )
+            except Exception:
+                answer = (
+                    f"Work session started on **{proj}**.\n\n"
+                    f"What would you like to work on first?"
+                )
+            await self._emit_tool("[PRESENCE]", f"Work session started: {proj}")
+
+            if action_clause:
+                action_result = await self._execute_compound_action(
+                    action_clause, proj, False, request,
+                )
+                if action_result:
+                    answer += f"\n\n{action_result}"
+                    update_last_route("PresenceManager+Action", "Work Session + Action")
+                    return self._simple_response("Work Session + Action", answer)
+
+            update_last_route("PresenceManager", "Work Session")
+            return self._simple_response("Work Session", answer)
+
+        if self._WORK_SESSION_END_RE.match(raw):
+            result = presence.end_work_session()
+            if not result.get("ended"):
+                update_last_route("PresenceManager", "No Session")
+                return self._simple_response("Work Session", "No active work session to end.")
+            tasks = result.get("tasks_completed", [])
+            actions = result.get("actions_performed", [])
+            task_lines = "\n".join(f"  - {t}" for t in tasks) if tasks else "  None"
+            action_lines = "\n".join(f"  - {a}" for a in actions[-10:]) if actions else "  None"
+            answer = (
+                f"**Work session ended** — {result['project']}\n\n"
+                f"**Duration:** {result['started_at']} to {result['ended_at']}\n\n"
+                f"**Tasks completed:**\n{task_lines}\n\n"
+                f"**Actions performed:**\n{action_lines}"
+            )
+            await self._emit_tool("[PRESENCE]", f"Work session ended: {result['project']}")
+            update_last_route("PresenceManager", "Session Summary")
+            return self._simple_response("Session Summary", answer)
+
+        if self._FOCUS_ON_RE.match(raw):
+            presence.toggle_focus(True)
+            await self._emit_tool("[PRESENCE]", "Focus mode ON")
+            update_last_route("PresenceManager", "Focus On")
+            return self._simple_response("Focus Mode", "Focus mode **on**. I'll only respond when spoken to — no proactive notifications.")
+
+        if self._FOCUS_OFF_RE.match(raw):
+            presence.toggle_focus(False)
+            await self._emit_tool("[PRESENCE]", "Focus mode OFF")
+            update_last_route("PresenceManager", "Focus Off")
+            return self._simple_response("Focus Mode", "Focus mode **off**. Proactive notifications resumed.")
+
+        if self._PRESENCE_STATUS_RE.match(raw):
+            status = presence.get_status()
+            proj = status["active_project"] or "None"
+            task = status["active_task"] or "None"
+            topic = status["active_topic"] or "None"
+            focus = "On" if status["focus_mode"] else "Off"
+            ws = status["work_session"]
+            ws_text = f"Active ({ws['project']}, {ws['tasks_completed']} tasks)" if ws["active"] else "None"
+            answer = (
+                f"**Presence Status**\n\n"
+                f"Project: {proj}\n"
+                f"Task: {task}\n"
+                f"Topic: {topic}\n"
+                f"Focus Mode: {focus}\n"
+                f"Work Session: {ws_text}\n"
+                f"Voice State: {status['voice_state']}\n"
+                f"Follow-up Window: {'Active' if status['follow_up_active'] else 'Inactive'}"
+            )
+            update_last_route("PresenceManager", "Status")
+            return self._simple_response("Presence Status", answer)
+
+        if self._RESET_CONTEXT_RE.match(raw):
+            presence.reset()
+            await self._emit_tool("[PRESENCE]", "Context reset")
+            update_last_route("PresenceManager", "Reset")
+            return self._simple_response("Context Reset", "Conversation context cleared. No active project, task, or topic.")
+
+        return None
+
+    _SSH_ACTION_RE = re.compile(
+        r"^(?:open\s+(?:the\s+)?(?:ssh|remote)\s+(?:terminal|session|connection)"
+        r"|ssh\s+(?:terminal|session|into\s+it|in)"
+        r"|connect\s+(?:to\s+it|via\s+ssh)"
+        r"|open\s+ssh)[\.\?!]?$",
+        re.I,
+    )
+    _OPEN_APP_RE = re.compile(
+        r"^(?:open|launch|start|run)\s+(?:the\s+)?(?P<apps>.+?)[\.\?!]?$",
+        re.I,
+    )
+
+    async def _execute_ssh_node(self, node_name: str, username: str = "",
+                               source: str = "direct") -> dict:
+        """Single SSH execution function. ALL paths must use this."""
+        from backend.app.tools.node_tool import open_ssh_session
+        logger.info("[SSH_NODE_CALLED] node=%s source=%s", node_name, source)
+        await self._emit_tool("[TOOL] ssh_node", f"Launching SSH: {node_name} (source: {source})")
+
+        result = open_ssh_session(node_name, username)
+        d = result.get("data") or {}
+
+        await self._emit_tool(
+            "[TOOL] ssh_node", result["summary"],
+            "info" if result["ok"] else "error",
+        )
+
+        launched = result["ok"] and d.get("launched")
+        logger.info(
+            "[TERMINAL_LAUNCH_RESULT] launched=%s pid=%s node=%s error=%s",
+            launched, d.get("process_id"), node_name,
+            result.get("error") or "",
+        )
+
+        ver_result = CapabilityExecutionResult(
+            success=result["ok"], executed=result["ok"],
+            source="ssh_terminal",
+            raw_output=result.get("summary", ""),
+            timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            node=node_name, capability="ssh_session", tool="ssh_node",
+            error=result.get("error", "") if not result["ok"] else "",
+        )
+        self._verification.record_result(ver_result)
+        self._last_tool_ok = result["ok"]
+
+        if launched:
+            self._verification.record_ssh_terminal(node_name)
+
+        return result
+
+    def _format_ssh_result(self, result: dict) -> str:
+        """Build response text from an ssh_node result. Never invents success."""
+        d = result.get("data") or {}
+        launched = result["ok"] and d.get("launched")
+
+        if launched:
+            uname = d.get("username", "")
+            key_note = f" using key `{d['key_path']}`" if d.get("key_path") else ""
+            pid_note = f" (PID {d['process_id']})" if d.get("process_id") else ""
+            node = result.get("node") or d.get("node") or "node"
+            return (
+                f"SSH terminal launched — {node} as **{uname}**{key_note}{pid_note}.\n\n"
+                f"Command: `{d.get('command', '')}`\n"
+                f"Provider: {d.get('provider', 'unknown')}\n\n"
+                f"Type commands directly in the SSH window."
+            )
+        error = result.get("error") or "unknown error"
+        cmd = d.get("command")
+        msg = f"SSH terminal launch failed: {error}"
+        if cmd:
+            msg += f"\n\nCommand attempted: `{cmd}`"
+        return msg
+
+    _CONTEXTUAL_SSH_RE = re.compile(
+        r"^(?:open\s+(?:the\s+)?(?:ssh|remote)\s+(?:terminal|session|connection)"
+        r"|open\s+ssh"
+        r"|ssh\s+(?:terminal|session|in(?:to\s+it)?)"
+        r"|connect(?:\s+via\s+ssh)?"
+        r")[\s\.\?!]*$",
+        re.I,
+    )
+
+    _EXPLICIT_NODE_SSH_RE = re.compile(
+        r"^(?:ssh(?:\s+into?)?|connect(?:\s+to)?)\s+(\w+)", re.I,
+    )
+
+    async def _handle_contextual_ssh(self, raw: str, presence, request) -> "AssistantResponse | None":
+        """Handle SSH commands, resolving target from presence context when needed."""
+        # If the query names a node explicitly, extract it and launch directly
+        m = self._EXPLICIT_NODE_SSH_RE.match(raw)
+        if m:
+            node_name = m.group(1).strip()
+            username_m = re.search(r"\bas\s+([a-zA-Z0-9_.\-]+)$", raw, re.I)
+            username = username_m.group(1) if username_m else ""
+            result = await self._execute_ssh_node(node_name, username, source="direct")
+            answer = self._format_ssh_result(result)
+            update_last_route("SSH", "Direct")
+            return self._node_response("SSH Session" if result["ok"] else "SSH Failed", answer, result)
+
+        # No explicit node — resolve from presence context
+        if not self._CONTEXTUAL_SSH_RE.match(raw):
+            return None
+
+        node_target = presence.active_node
+        project = presence.active_project
+
+        if node_target:
+            logger.info("Contextual SSH: using active_node=%s", node_target)
+            await self._emit_tool("[SSH]", f"Context resolve: active node = {node_target}")
+            result = await self._execute_ssh_node(node_target, "", source="context_node")
+            answer = self._format_ssh_result(result)
+            update_last_route("SSH", f"Context -> {node_target}")
+            return self._node_response("SSH Session" if result["ok"] else "SSH Failed", answer, result)
+
+        if project:
+            from backend.app.services.project_registry import find_project
+            proj_info = find_project(project)
+            if proj_info and proj_info.get("notes") and any("node" in n.lower() for n in proj_info["notes"]):
+                logger.info("Contextual SSH: project %s is a node", project)
+                await self._emit_tool("[SSH]", f"Context resolve: project {project} is a node")
+                result = await self._execute_ssh_node(project, "", source="context_project_node")
+                answer = self._format_ssh_result(result)
+                update_last_route("SSH", f"Context -> {project}")
+                return self._node_response("SSH Session" if result["ok"] else "SSH Failed", answer, result)
+
+            await self._emit_tool("[SSH]", f"No SSH target: project '{project}' is not a node", "warning")
+            update_last_route("SSH", "No Target")
+            return self._simple_response(
+                "SSH — No Target",
+                f"Active project is **{project}**, but it's not an SSH node.\n\n"
+                f"Specify a node: `ssh <node_name>`",
+            )
+
+        update_last_route("SSH", "No Context")
+        return self._simple_response(
+            "SSH — No Target",
+            "No active node or project. Specify a node: `ssh <node_name>`",
+        )
+
+    async def _execute_compound_action(
+        self, action: str, project: str, is_node: bool, request
+    ) -> str | None:
+        """Execute an action clause extracted from a compound presence command."""
+        action_stripped = action.strip()
+        logger.info("Compound action: project=%r action=%r is_node=%s", project, action_stripped, is_node)
+        await self._emit_tool("[COMPOUND]", f"Action: {action_stripped} (context: {project})")
+
+        if self._SSH_ACTION_RE.match(action_stripped):
+            result = await self._execute_ssh_node(project, "", source="mixed_intent")
+            return self._format_ssh_result(result)
+
+        m = self._OPEN_APP_RE.match(action_stripped)
+        if m:
+            from backend.app.tools.planner import _regex_desktop
+            app_target = m.group("apps").strip()
+            desk_route = _regex_desktop(f"open {app_target}")
+            if desk_route and desk_route.get("action") in ("call_tool", "call_tools"):
+                tool_resp = await self._execute_plan(desk_route, request)
+                if tool_resp:
+                    return tool_resp.answer
+            from backend.app.tools.planner import plan
+            tool_decision = await plan(action_stripped, allow_web=False)
+            if tool_decision.get("action") in ("call_tool", "call_tools"):
+                tool_resp = await self._execute_plan(tool_decision, request)
+                if tool_resp:
+                    return tool_resp.answer
+
+        return None
+    # ── End Presence Mode ──────────────────────────────────────────────────
 
     async def _handle_approval_command(self, raw: str, request) -> AssistantResponse | None:
         """Handle approve/reject commands for the safety framework."""
@@ -3886,7 +4310,7 @@ class ConversationService:
         return text
 
     async def _handle_local_command(self, request: AssistantRequest) -> AssistantResponse | None:
-        raw = request.query.strip()
+        raw = strip_wake_prefix(request.query.strip())
         lowered = raw.lower()
 
         # Pending email send confirmation (Phase 12G)
@@ -3952,30 +4376,8 @@ class ConversationService:
             if re.match(r"^[a-zA-Z0-9_.\-]{1,64}$", raw.strip()):
                 username = raw.strip()
                 self._pending_ssh = None
-                await self._emit_tool("[TOOL] ssh_node", f"Opening SSH: {username}@{pending['host']} ({pending['node']})")
-                from backend.app.tools.node_tool import open_ssh_session
-                result = open_ssh_session(pending["node"], username, pending.get("key_path"))
-                await self._emit_tool("[TOOL] ssh_node", result["summary"], "info" if result["ok"] else "error")
-                ver_result = CapabilityExecutionResult(
-                    success=result["ok"], executed=result["ok"],
-                    source="ssh_terminal", raw_output=result.get("summary", ""),
-                    timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    node=pending["node"], capability="ssh_session", tool="ssh_node",
-                    error=result.get("error", "") if not result["ok"] else "",
-                )
-                self._verification.record_result(ver_result)
-                self._last_tool_ok = result["ok"]
-                if result["ok"]:
-                    self._verification.record_ssh_terminal(pending["node"])
-                    d = result.get("data", {})
-                    key_note = f" using key `{d['key_path']}`" if d.get("key_path") else ""
-                    answer = (
-                        f"SSH terminal opened — {pending['node']} as **{username}**{key_note}.\n\n"
-                        f"**Note:** This is an interactive terminal window. "
-                        f"I cannot run commands through it — type commands directly in the SSH window."
-                    )
-                else:
-                    answer = f"Could not open SSH: {result['error']}"
+                result = await self._execute_ssh_node(pending["node"], username, source="pending_username")
+                answer = self._format_ssh_result(result)
                 return self._node_response("SSH Session" if result["ok"] else "SSH Failed", answer, result)
 
         # Pending node command confirmation
@@ -6819,6 +7221,14 @@ class ConversationService:
                 system_content = system_content + "\n\n" + brain63_ctx
             if node_ctx:
                 system_content = system_content + "\n\n" + node_ctx
+            # Presence context — active project/task/topic for follow-up awareness
+            try:
+                from backend.app.services.presence_service import get_presence
+                _pctx = get_presence().build_context_block()
+                if _pctx:
+                    system_content = system_content + "\n\n" + _pctx
+            except Exception:
+                pass
             messages = [{"role": "system", "content": system_content}]
             messages.extend(history)
             messages.append({"role": "user", "content": query})
@@ -6828,17 +7238,25 @@ class ConversationService:
             "messages": messages,
             "stream": False,
             "keep_alive": KEEP_ALIVE,
-            "options": {"num_predict": 120, "temperature": 0.7, "num_ctx": 2048},
+            "options": {"num_predict": 400, "temperature": 0.7, "num_ctx": 4096},
         }
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(OLLAMA_CHAT_URL, json=payload)
                 response.raise_for_status()
-            content = response.json().get("message", {}).get("content", "").strip()
+            rj = response.json()
+            content = rj.get("message", {}).get("content", "").strip()
+            done_reason = rj.get("done_reason", "")
+            logger.info(
+                "LLM response: len=%d done_reason=%s goal=%s query=%r",
+                len(content), done_reason, goal, query[:80],
+            )
             if content:
+                if done_reason == "length" and not content[-1] in ".!?)\"'":
+                    content = content.rsplit(" ", 1)[0].rstrip(",:;-") + "."
                 return content
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.error("LLM generation failed: %s", exc)
         return (
             f"I've noted your query: {query.strip()}. "
             "The local model is unavailable — check that Ollama is running."
@@ -6901,12 +7319,15 @@ class ConversationService:
             "messages": messages,
             "stream": True,
             "keep_alive": KEEP_ALIVE,
-            "options": {"num_predict": 120, "temperature": 0.7, "num_ctx": 2048},
+            "options": {"num_predict": 400, "temperature": 0.7, "num_ctx": 4096},
         }
+        chunk_count = 0
+        full_text = []
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("POST", OLLAMA_CHAT_URL, json=payload) as response:
                     response.raise_for_status()
+                    done_reason = ""
                     async for line in response.aiter_lines():
                         if not line.strip():
                             continue
@@ -6914,13 +7335,23 @@ class ConversationService:
                             data = json.loads(line)
                             token = data.get("message", {}).get("content", "")
                             if token:
+                                chunk_count += 1
+                                full_text.append(token)
                                 yield token
                             if data.get("done"):
+                                done_reason = data.get("done_reason", "")
                                 break
                         except json.JSONDecodeError:
                             continue
+            text = "".join(full_text)
+            logger.info(
+                "LLM stream: chunks=%d len=%d done_reason=%s goal=%s query=%r",
+                chunk_count, len(text), done_reason, goal, query[:80],
+            )
+            if done_reason == "length" and text and text[-1] not in ".!?)\"'":
+                yield "."
         except Exception as exc:
-            logger.warning("Streaming response failed: %s", exc)
+            logger.error("Streaming response failed: %s", exc)
             yield "The local model is unavailable — check that Ollama is running."
 
     async def handle_stream(self, request: AssistantRequest):
@@ -6941,17 +7372,40 @@ class ConversationService:
             return
 
         # ── Command Router v2: classify before execution ────────────────────
-        _raw_q = request.query.strip()
+        _raw_q = strip_wake_prefix(request.query.strip())
         _route = classify(_raw_q)
         log_route(_route)
 
         if _route.owner == "RoutingLog":
-            _rl_text = format_routing_log()
+            _is_last = bool(re.match(r"^(?:show\s+)?last\s+route", _raw_q, re.I))
+            _rl_text = format_last_route() if _is_last else format_routing_log()
             self._persist_turn(request, _rl_text)
             _rl_resp = self._simple_response("Command Routing", _rl_text)
             _rl_resp.processing_time_ms = (time.perf_counter() - started) * 1000
             yield json.dumps({"type": "full", "response": _rl_resp.model_dump()})
             return
+
+        # ── Presence Mode (Phase 16C) — MUST be in streaming path too ─────
+        from backend.app.services.presence_service import get_presence
+        _presence = get_presence()
+        _presence_resp = await self._handle_presence_command(_raw_q, _presence, request)
+        if _presence_resp is not None:
+            self._persist_turn(request, _presence_resp.answer)
+            _presence_resp.processing_time_ms = (time.perf_counter() - started) * 1000
+            yield json.dumps({"type": "full", "response": _presence_resp.model_dump()})
+            return
+        _presence._last_interaction = __import__("time").time()
+        # ──────────────────────────────────────────────────────────────────
+
+        # ── Context-aware SSH ─────────────────────────────────────────────
+        if _route.owner == "SSH":
+            _ssh_resp = await self._handle_contextual_ssh(_raw_q, _presence, request)
+            if _ssh_resp is not None:
+                self._persist_turn(request, _ssh_resp.answer)
+                _ssh_resp.processing_time_ms = (time.perf_counter() - started) * 1000
+                yield json.dumps({"type": "full", "response": _ssh_resp.model_dump()})
+                return
+        # ──────────────────────────────────────────────────────────────────
 
         if _CAP_WHAT_CAN_RE.match(_raw_q) or _CAP_LIMITS_RE.match(_raw_q) or _CAP_IMPROVE_RE.search(_raw_q):
             _cap_resp = await self._generate_capability_response(_raw_q, request)
@@ -6999,11 +7453,11 @@ class ConversationService:
         # ──────────────────────────────────────────────────────────────────────
 
         # ── Social Conversation Engine ─────────────────────────────────────────
-        _quick_reply, _social_goal = route_social(request.query)
+        _quick_reply, _social_goal = route_social(_raw_q)
 
         logger.info(
             "[ROUTE] query=%r | social_quick=%s | social_goal=%s",
-            request.query[:120],
+            _raw_q[:120],
             _quick_reply is not None,
             _social_goal,
         )
@@ -7020,11 +7474,11 @@ class ConversationService:
             if self.memory_service:
                 _history = self.memory_service.get_ollama_messages(request.session_id, limit=10)
             self.state.note_query(
-                request.query, _social_goal, is_builder=is_builder_topic(request.query)
+                _raw_q, _social_goal, is_builder=is_builder_topic(_raw_q)
             )
             _full_text = ""
             async for _token in self._generate_response_stream(
-                request.query, _history,
+                _raw_q, _history,
                 voice=bool(request.metadata.get("voice")),
                 goal=_social_goal,
             ):
@@ -7060,8 +7514,8 @@ class ConversationService:
 
         if self.execution_engine is not None:
             from backend.app.orchestration.execution_engine import is_multistep
-            if is_multistep(request.query):
-                exec_response = await self.execution_engine.run(request.query, request)
+            if is_multistep(_raw_q):
+                exec_response = await self.execution_engine.run(_raw_q, request)
                 if exec_response is not None:
                     self._persist_turn(request, exec_response.answer)
                     exec_response.processing_time_ms = (time.perf_counter() - started) * 1000
@@ -7069,7 +7523,7 @@ class ConversationService:
                     return
 
         use_web = _route.category == "web_search" or request.metadata.get("use_web") is True
-        tool_decision = await plan(request.query, allow_web=use_web)
+        tool_decision = await plan(_raw_q, allow_web=use_web)
 
         logger.info(
             "[ROUTE] category=%s use_web=%s | plan_action=%s | plan_tool=%s",
@@ -7092,14 +7546,14 @@ class ConversationService:
             from backend.app.web.schemas.models import SearchRequest as _SR
             search_response = await self.web_service.search(
                 _SR(
-                    query=request.query,
-                    category=request.metadata.get("web_category", self._infer_search_category(request.query)),
+                    query=_raw_q,
+                    category=request.metadata.get("web_category", self._infer_search_category(_raw_q)),
                     limit=4,
                 )
             )
             sources = self.web_service.to_sources(search_response)
             answer = await self._generate_grounded_answer(
-                request.query, sources, voice=bool(request.metadata.get("voice"))
+                _raw_q, sources, voice=bool(request.metadata.get("voice"))
             )
             self._persist_turn(request, answer)
             elapsed = (time.perf_counter() - started) * 1000
@@ -7111,8 +7565,8 @@ class ConversationService:
                 reasoning="Grounded web search response.",
                 processing_time_ms=elapsed,
                 sources=sources,
-                agents=[AgentStatus(name="Web Tool", role="search", state="complete", confidence=85, summary=f"Searched: {request.query}")],
-                logs=[CommandLogEntry(timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), title="Web search", detail=f"Query: {request.query}")],
+                agents=[AgentStatus(name="Web Tool", role="search", state="complete", confidence=85, summary=f"Searched: {_raw_q}")],
+                logs=[CommandLogEntry(timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), title="Web search", detail=f"Query: {_raw_q}")],
                 payload={"speech_text": sanitize_for_speech(answer)},
             )
             yield json.dumps({"type": "full", "response": web_resp.model_dump()})
@@ -7123,10 +7577,10 @@ class ConversationService:
         if self.memory_service:
             history = self.memory_service.get_ollama_messages(request.session_id, limit=10)
 
-        self.state.note_query(request.query, None, is_builder=is_builder_topic(request.query))
+        self.state.note_query(_raw_q, None, is_builder=is_builder_topic(_raw_q))
         full_text = ""
         async for token in self._generate_response_stream(
-            request.query, history, voice=bool(request.metadata.get("voice")),
+            _raw_q, history, voice=bool(request.metadata.get("voice")),
             goal=None,
         ):
             full_text += token

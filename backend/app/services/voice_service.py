@@ -12,10 +12,13 @@ from backend.config import (
     PIPER_MODEL_PATH,
     PIPER_USE_CUDA,
     SPEACHES_API_KEY,
+    SPEACHES_BASE_URL,
     SPEACHES_STT_MODEL,
+    SPEACHES_TRANSCRIBE_ENDPOINT,
     SPEACHES_TTS_MODEL,
     SPEACHES_TTS_VOICE,
-    SPEACHES_URL,
+    STT_PROVIDER,
+    TTS_PROVIDER,
     WHISPER_MODEL_SIZE,
 )
 from backend.voice.implementations.piper_tts import PiperTTS
@@ -55,60 +58,100 @@ def _check_piper_model(model_path: str) -> tuple[bool, str]:
 # ── Speaches availability check ───────────────────────────────────────────────
 
 def _check_speaches(url: str) -> tuple[bool, str]:
-    """Ping Speaches health endpoint to see if it's reachable."""
+    """Verify Speaches is actually running at the given URL.
+
+    Guards against false positives: if the URL points at the CMD-CTR backend
+    (which also has /health), the transcription endpoint won't exist and
+    every STT call would 404.
+    """
     if not url:
-        return False, "SPEACHES_URL not configured"
+        return False, "SPEACHES_BASE_URL not configured"
+
+    import urllib.request
+    import json
+
+    base = url.rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+
+    # 1. Check if the transcription endpoint exists (OPTIONS or a model list)
+    #    This distinguishes Speaches from any other server that has /health.
     try:
-        import urllib.request
-        # Normalize URL — strip /v1 for health check
-        base = url.rstrip("/")
-        if base.endswith("/v1"):
-            base = base[:-3]
+        models_url = f"{base}/v1/models"
+        with urllib.request.urlopen(models_url, timeout=3) as r:
+            if r.status == 200:
+                body = json.loads(r.read())
+                models = body.get("data", body.get("models", []))
+                if isinstance(models, list) and len(models) > 0:
+                    return True, f"Speaches OK at {base} ({len(models)} models)"
+                return True, f"Speaches reachable at {base} (no models listed)"
+    except Exception:
+        pass
+
+    # 2. Fall back to /health but verify the response looks like Speaches
+    try:
         health_url = f"{base}/health"
         with urllib.request.urlopen(health_url, timeout=2) as r:
             if r.status == 200:
-                return True, health_url
+                body = r.read().decode("utf-8", errors="replace").lower()
+                if "silvia" in body or '"service"' in body:
+                    return False, (
+                        f"SPEACHES_BASE_URL ({base}) points at the CMD-CTR backend, not Speaches. "
+                        f"Speaches and CMD-CTR must run on different ports."
+                    )
+                return True, f"Speaches health OK at {base}"
     except Exception as e:
-        return False, f"Speaches unreachable at {url}: {e}"
-    return False, f"Speaches health check failed at {url}"
+        return False, f"Speaches not reachable at {base}: {e}"
+
+    return False, f"Speaches health check failed at {base}"
 
 
 class VoiceService:
     def __init__(self) -> None:
-        # ── Determine which providers to use ─────────────────────────────────
-        speaches_reachable, speaches_msg = _check_speaches(SPEACHES_URL)
-
-        use_speaches_stt = speaches_reachable
-        use_speaches_tts = speaches_reachable
+        speaches_reachable, speaches_msg = _check_speaches(SPEACHES_BASE_URL)
+        self._last_stt_error: str | None = None
 
         notes: list[str] = []
 
+        # ── STT provider selection ───────────────────────────────────────────
+        use_speaches_stt = STT_PROVIDER == "speaches" and speaches_reachable
+
         if use_speaches_stt:
             stt = SpeachesSTT(
-                base_url=SPEACHES_URL,
+                base_url=SPEACHES_BASE_URL,
                 api_key=SPEACHES_API_KEY,
                 model=SPEACHES_STT_MODEL,
             )
             stt_label = f"Speaches ({SPEACHES_STT_MODEL.split('/')[-1]})"
             stt_ok = True
-            notes.append(f"STT: {stt_label} @ {SPEACHES_URL}")
-            logger.info("Voice: using Speaches STT — %s", SPEACHES_STT_MODEL)
+            notes.append(f"STT: {stt_label} @ {SPEACHES_BASE_URL}")
+            logger.info("Voice STT: Speaches — model=%s url=%s", SPEACHES_STT_MODEL, SPEACHES_BASE_URL)
         else:
             whisper_ok, whisper_msg = _check_whisper_installed()
             stt = WhisperSTT(model_size=WHISPER_MODEL_SIZE)
             stt_label = f"faster-whisper ({WHISPER_MODEL_SIZE})"
             stt_ok = whisper_ok
-            if whisper_ok:
+            if STT_PROVIDER == "speaches" and not speaches_reachable:
+                notes.append(f"STT: Speaches requested but unavailable — {speaches_msg}")
+                if whisper_ok:
+                    notes.append(f"STT: Falling back to local {stt_label}")
+                    logger.warning("Voice STT: Speaches unavailable (%s), falling back to local Whisper", speaches_msg)
+                else:
+                    notes.append(f"STT: Fallback also unavailable — {whisper_msg}")
+                    logger.error("Voice STT: Speaches unavailable AND local Whisper unavailable")
+            elif whisper_ok:
                 notes.append(f"STT: {stt_label} (local)")
-                if SPEACHES_URL:
-                    notes.append(f"Speaches unavailable — {speaches_msg}")
+                logger.info("Voice STT: local faster-whisper (%s)", WHISPER_MODEL_SIZE)
             else:
-                notes.append(f"STT unavailable — {whisper_msg}")
-            logger.info("Voice: using local Whisper STT (%s) — Speaches: %s", WHISPER_MODEL_SIZE, speaches_msg)
+                notes.append(f"STT: Not configured — {whisper_msg}")
+                logger.warning("Voice STT: Not configured — %s", whisper_msg)
+
+        # ── TTS provider selection ───────────────────────────────────────────
+        use_speaches_tts = TTS_PROVIDER == "speaches" and speaches_reachable
 
         if use_speaches_tts:
             tts = SpeachesTTS(
-                base_url=SPEACHES_URL,
+                base_url=SPEACHES_BASE_URL,
                 api_key=SPEACHES_API_KEY,
                 model=SPEACHES_TTS_MODEL,
                 voice=SPEACHES_TTS_VOICE,
@@ -116,6 +159,7 @@ class VoiceService:
             tts_label = f"Speaches ({SPEACHES_TTS_MODEL.split('/')[-1]}, voice={SPEACHES_TTS_VOICE})"
             tts_ok = True
             notes.append(f"TTS: {tts_label}")
+            logger.info("Voice TTS: Speaches — model=%s voice=%s", SPEACHES_TTS_MODEL, SPEACHES_TTS_VOICE)
         else:
             piper_bin_ok, piper_bin_msg = _check_piper_binary()
             piper_model_ok, piper_model_msg = _check_piper_model(PIPER_MODEL_PATH)
@@ -127,10 +171,13 @@ class VoiceService:
             tts_ok = piper_bin_ok and piper_model_ok
             if tts_ok:
                 notes.append(f"TTS: Piper local — {Path(PIPER_MODEL_PATH).name}")
+                logger.info("Voice TTS: local Piper — %s", Path(PIPER_MODEL_PATH).name)
             elif not piper_bin_ok:
-                notes.append(f"TTS unavailable — {piper_bin_msg}")
+                notes.append(f"TTS: Not configured — {piper_bin_msg}")
+                logger.warning("Voice TTS: Not configured — %s", piper_bin_msg)
             else:
-                notes.append(f"TTS unavailable — {piper_model_msg}")
+                notes.append(f"TTS: Not configured — {piper_model_msg}")
+                logger.warning("Voice TTS: Not configured — %s", piper_model_msg)
             tts_label = f"piper ({Path(PIPER_MODEL_PATH).name})"
 
         self._pipeline = VoicePipeline(stt_provider=stt, tts_provider=tts)
@@ -148,11 +195,9 @@ class VoiceService:
         )
 
         logger.info(
-            "VoiceService ready: STT=%s(%s) TTS=%s(%s)",
-            "speaches" if use_speaches_stt else "local",
-            stt_ok,
-            "speaches" if use_speaches_tts else "local",
-            tts_ok,
+            "Voice startup health: STT=%s TTS=%s",
+            "OK" if stt_ok else "Failed/Not configured",
+            "OK" if tts_ok else "Failed/Not configured",
         )
 
     def status(self) -> VoiceStatus:
@@ -192,11 +237,27 @@ class VoiceService:
             else:
                 text = await self._pipeline.record_and_transcribe(audio_bytes)
                 result = {"text": text, "message": None, "diagnostics": None}
+            self._last_stt_error = None
+        except Exception as e:
+            err_msg = str(e)
+            self._last_stt_error = err_msg
+            if "404" in err_msg or "Not Found" in err_msg:
+                raise RuntimeError(
+                    f"STT transcription endpoint not found. "
+                    f"Check SPEACHES_BASE_URL ({SPEACHES_BASE_URL or 'not set'}) — "
+                    f"it may be pointing at the wrong server or port."
+                ) from e
+            if "Connection" in err_msg or "unreachable" in err_msg.lower():
+                raise RuntimeError(
+                    f"STT provider not reachable. "
+                    f"Check SPEACHES_BASE_URL ({SPEACHES_BASE_URL or 'not set'})."
+                ) from e
+            raise
         finally:
             self.update(VoiceStateUpdate(listening=False))
         elapsed = (time.perf_counter() - started) * 1000
         text = (result.get("text") or "").strip()
-        logger.info("Transcription complete: %d chars in %.0fms", len(text), elapsed)
+        logger.info("STT transcription complete: %d chars in %.0fms", len(text), elapsed)
         return TranscribeResponse(
             text=text,
             processing_time_ms=elapsed,
@@ -219,45 +280,68 @@ class VoiceService:
         return audio_bytes
 
     def diagnostics(self) -> dict:
-        speaches_reachable, speaches_msg = _check_speaches(SPEACHES_URL)
+        speaches_reachable, speaches_msg = _check_speaches(SPEACHES_BASE_URL)
         whisper_ok, whisper_msg = _check_whisper_installed()
         piper_bin_ok, piper_bin_msg = _check_piper_binary()
         piper_model_ok, piper_model_msg = _check_piper_model(PIPER_MODEL_PATH)
 
+        # Check if transcription endpoint actually exists
+        transcribe_ok = False
+        transcribe_detail = "not checked"
+        if speaches_reachable and SPEACHES_BASE_URL:
+            try:
+                import urllib.request
+                base = SPEACHES_BASE_URL.rstrip("/")
+                if base.endswith("/v1"):
+                    base = base[:-3]
+                url = f"{base}{SPEACHES_TRANSCRIBE_ENDPOINT}"
+                req = urllib.request.Request(url, method="OPTIONS")
+                with urllib.request.urlopen(req, timeout=3) as r:
+                    transcribe_ok = r.status < 500
+                    transcribe_detail = f"endpoint reachable ({r.status})"
+            except Exception as e:
+                transcribe_detail = f"endpoint check failed: {e}"
+
         return {
             "speaches": {
-                "url": SPEACHES_URL or "(not configured)",
+                "base_url": SPEACHES_BASE_URL or "(not configured)",
+                "transcribe_endpoint": SPEACHES_TRANSCRIBE_ENDPOINT,
                 "reachable": speaches_reachable,
-                "status": "ready" if speaches_reachable else "unavailable",
-                "detail": speaches_msg,
+                "server_status": speaches_msg,
+                "transcribe_endpoint_ok": transcribe_ok,
+                "transcribe_detail": transcribe_detail,
                 "stt_model": SPEACHES_STT_MODEL,
                 "tts_model": SPEACHES_TTS_MODEL,
                 "tts_voice": SPEACHES_TTS_VOICE,
             },
             "stt": {
-                "active_provider": "speaches" if speaches_reachable else "local-whisper",
-                "provider": "faster-whisper (local)",
-                "model_size": WHISPER_MODEL_SIZE,
-                "installed": whisper_ok,
-                "status": "ready" if whisper_ok else "unavailable",
-                "detail": whisper_msg,
+                "configured_provider": STT_PROVIDER,
+                "active_provider": self._status.stt_provider,
+                "available": self._status.stt_available,
+                "last_error": self._last_stt_error,
+                "local_whisper_installed": whisper_ok,
+                "local_whisper_detail": whisper_msg,
+                "local_whisper_model": WHISPER_MODEL_SIZE,
             },
             "tts": {
-                "active_provider": "speaches" if speaches_reachable else "local-piper",
-                "provider": "piper (local)",
-                "binary_found": piper_bin_ok,
-                "binary_path": piper_bin_msg if piper_bin_ok else None,
-                "model_path": PIPER_MODEL_PATH,
-                "model_exists": piper_model_ok,
-                "status": "ready" if (piper_bin_ok and piper_model_ok) else "unavailable",
-                "detail": piper_model_msg if not piper_model_ok else (piper_bin_msg if not piper_bin_ok else "ok"),
+                "configured_provider": TTS_PROVIDER,
+                "active_provider": self._status.tts_provider,
+                "available": self._status.tts_available,
+                "local_piper_binary": piper_bin_ok,
+                "local_piper_binary_path": piper_bin_msg if piper_bin_ok else None,
+                "local_piper_model_path": PIPER_MODEL_PATH,
+                "local_piper_model_exists": piper_model_ok,
+                "local_piper_detail": piper_model_msg if not piper_model_ok else (piper_bin_msg if not piper_bin_ok else "ok"),
             },
             "config": {
-                "whisper_model_size": WHISPER_MODEL_SIZE,
-                "piper_model_path": PIPER_MODEL_PATH,
-                "speaches_url": SPEACHES_URL or "(disabled)",
-                "speaches_stt_model": SPEACHES_STT_MODEL,
-                "speaches_tts_model": SPEACHES_TTS_MODEL,
-                "speaches_tts_voice": SPEACHES_TTS_VOICE,
+                "STT_PROVIDER": STT_PROVIDER,
+                "TTS_PROVIDER": TTS_PROVIDER,
+                "SPEACHES_BASE_URL": SPEACHES_BASE_URL or "(not set)",
+                "SPEACHES_TRANSCRIBE_ENDPOINT": SPEACHES_TRANSCRIBE_ENDPOINT,
+                "SPEACHES_STT_MODEL": SPEACHES_STT_MODEL,
+                "SPEACHES_TTS_MODEL": SPEACHES_TTS_MODEL,
+                "SPEACHES_TTS_VOICE": SPEACHES_TTS_VOICE,
+                "WHISPER_MODEL_SIZE": WHISPER_MODEL_SIZE,
+                "PIPER_MODEL_PATH": PIPER_MODEL_PATH,
             },
         }

@@ -34,7 +34,11 @@ def _mime_to_ext(mime_type: str | None) -> str:
 
 class SpeachesSTT(STTProvider):
     def __init__(self, base_url: str, api_key: str = "speaches", model: str = "Systran/faster-whisper-small") -> None:
-        self._base_url = base_url.rstrip("/")
+        raw = base_url.rstrip("/")
+        if raw.endswith("/v1"):
+            self._base_url = raw[:-3]
+        else:
+            self._base_url = raw
         self._api_key = api_key
         self._model = model
         self._client = None
@@ -54,7 +58,9 @@ class SpeachesSTT(STTProvider):
     def _client_instance(self):
         if self._client is None:
             from openai import OpenAI
-            self._client = OpenAI(base_url=self._base_url + "/v1" if not self._base_url.endswith("/v1") else self._base_url, api_key=self._api_key)
+            api_base = f"{self._base_url}/v1"
+            logger.info("SpeachesSTT: OpenAI client base_url=%s", api_base)
+            self._client = OpenAI(base_url=api_base, api_key=self._api_key)
         return self._client
 
     async def transcribe(self, audio_bytes: bytes) -> str:
@@ -102,6 +108,22 @@ class SpeachesSTT(STTProvider):
                 response_format="verbose_json",
             )
         except Exception as e:
+            err = str(e)
+            if "404" in err or "Not Found" in err:
+                logger.error(
+                    "Speaches STT: 404 Not Found at %s/v1/audio/transcriptions — "
+                    "SPEACHES_BASE_URL may be pointing at the wrong server (e.g. CMD-CTR backend instead of Speaches)",
+                    self._base_url,
+                )
+                raise RuntimeError(
+                    f"STT endpoint not found at {self._base_url}. "
+                    f"Check SPEACHES_BASE_URL — it may be pointing at the CMD-CTR backend instead of the Speaches service."
+                ) from e
+            if "Connection" in err or "refused" in err.lower():
+                logger.error("Speaches STT: connection refused at %s", self._base_url)
+                raise RuntimeError(
+                    f"STT provider not reachable at {self._base_url}. Check SPEACHES_BASE_URL."
+                ) from e
             logger.error("Speaches STT failed: %s", e)
             raise RuntimeError(f"Speaches STT error: {e}") from e
 

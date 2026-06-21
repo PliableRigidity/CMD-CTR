@@ -2964,8 +2964,13 @@ _PROJ_STARTABLE_RE = re.compile(
 
 # Board name fragment → (board_id, route)
 _BOARD_ALIASES: list[tuple["re.Pattern[str]", str, str]] = [
+    # Primary navigation
     (re.compile(r"\bintel\b|\bintelligence\b|\bworld.?intel",         re.I), "intel",          "/intel"),
     (re.compile(r"\bhardware\b",                                       re.I), "hardware",        "/hardware"),
+    (re.compile(r"\bprojects?\s+board\b|\bprojects?\s+view\b",        re.I), "projects",        "/projects"),
+    (re.compile(r"\bnodes?\s+board\b|\bnodes?\s+view\b",              re.I), "nodes",           "/nodes"),
+    (re.compile(r"\bapps?\s+board\b|\bapps?\s+view\b",                re.I), "apps",            "/apps"),
+    # Advanced / Developer Mode boards
     (re.compile(r"\bknowledge\b|\bgraph\b|\bkg\b",                    re.I), "knowledge_graph",  "/knowledge"),
     (re.compile(r"\bmemory\s+board|\bproject\s+memory|\beng.*memory", re.I), "memory",          "/memory"),
     (re.compile(r"\bworkspace\b|\bdigital\s*twin\b|\btwin\b",         re.I), "workspace",        "/workspace"),
@@ -2978,7 +2983,7 @@ _BOARD_ALIASES: list[tuple["re.Pattern[str]", str, str]] = [
     (re.compile(r"\bmission\b",                                        re.I), "mission",          "/"),
     (re.compile(r"\binfra",                                            re.I), "infrastructure",   "/"),
     (re.compile(r"\bfiles?\b|\bdesktop\b",                             re.I), "desktop",          "/"),
-    (re.compile(r"\bcommand\b|\bhome\b",                               re.I), "command_center",   "/"),
+    (re.compile(r"\bcommand\b|\bhome\b|\bassistant\b",                 re.I), "command_center",   "/"),
 ]
 
 _BOARD_LABELS: dict[str, str] = {

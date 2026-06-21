@@ -56,15 +56,39 @@ PIPER_MODEL_PATH = os.getenv("PIPER_MODEL_PATH", r"C:\Piper\models\en-us-ryan-hi
 PIPER_CONFIG_PATH = os.getenv("PIPER_CONFIG_PATH", "")
 PIPER_USE_CUDA = os.getenv("PIPER_USE_CUDA", "false").lower() == "true"
 
-# Speaches — OpenAI-compatible local STT/TTS server (same one used by llm-voice-assistant)
-# When SPEACHES_URL is set, Speaches is preferred over local Whisper/Piper.
-# PORT NOTE: Speaches default port is 8000 (same as CMD-CTR). Change Speaches docker-compose
-# to "9000:8000" so it exposes on 9000, then set SPEACHES_URL=http://localhost:9000 in .env
-SPEACHES_URL = os.getenv("SPEACHES_URL", "")  # empty = disabled, use local Whisper/Piper
+# Voice provider selection
+STT_PROVIDER = os.getenv("STT_PROVIDER", "speaches")  # speaches | whisper
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "speaches")  # speaches | piper
+
+# Voice mode and wake word hardening
+VOICE_MODE = os.getenv("VOICE_MODE", "hybrid")  # push_to_talk | wake_word | hybrid
+WAKE_WORD_THRESHOLD = float(os.getenv("WAKE_WORD_THRESHOLD", "0.75"))
+WAKE_WORD_COOLDOWN_SECONDS = float(os.getenv("WAKE_WORD_COOLDOWN_SECONDS", "5"))
+WAKE_CONFIRMATION_ENABLED = os.getenv("WAKE_CONFIRMATION_ENABLED", "true").lower() in ("true", "1", "yes")
+WAKE_MIN_COMMAND_WORDS = int(os.getenv("WAKE_MIN_COMMAND_WORDS", "3"))
+IGNORE_SYSTEM_AUDIO = os.getenv("IGNORE_SYSTEM_AUDIO", "true").lower() in ("true", "1", "yes")
+
+# Terminal / SSH
+TERMINAL_PROVIDER = os.getenv("TERMINAL_PROVIDER", "auto")  # auto | windows_terminal | cmd | powershell
+
+# Presence Mode (Phase 16C)
+VOICE_FOLLOWUP_WINDOW = int(os.getenv("VOICE_FOLLOWUP_WINDOW", "15"))
+VOICE_CONFIRM_ACTIONS = os.getenv("VOICE_CONFIRM_ACTIONS", "true").lower() in ("true", "1", "yes")
+DO_NOT_DISTURB = os.getenv("DO_NOT_DISTURB", "false").lower() in ("true", "1", "yes")
+
+# Speaches — OpenAI-compatible local STT/TTS server
+# IMPORTANT: Speaches and CMD-CTR must be on DIFFERENT ports.
+# Speaches default Docker port is 8000; if CMD-CTR is also on 8000,
+# remap Speaches in docker-compose: "8010:8000" then SPEACHES_BASE_URL=http://localhost:8010
+SPEACHES_BASE_URL = os.getenv("SPEACHES_BASE_URL", os.getenv("SPEACHES_URL", ""))
+SPEACHES_TRANSCRIBE_ENDPOINT = os.getenv("SPEACHES_TRANSCRIBE_ENDPOINT", "/v1/audio/transcriptions")
 SPEACHES_API_KEY = os.getenv("SPEACHES_API_KEY", "speaches")
 SPEACHES_STT_MODEL = os.getenv("SPEACHES_STT_MODEL", "rtlingo/mobiuslabsgmbh-faster-whisper-large-v3-turbo")
 SPEACHES_TTS_MODEL = os.getenv("SPEACHES_TTS_MODEL", "speaches-ai/Kokoro-82M-v1.0-ONNX")
 SPEACHES_TTS_VOICE = os.getenv("SPEACHES_TTS_VOICE", "af_aoede")
+
+# Backward compat alias
+SPEACHES_URL = SPEACHES_BASE_URL
 
 # Vision (Phase 12F) — PAUSED/DEFERRED
 # Set ENABLE_VISION_INVENTORY=true in .env to re-enable the experimental vision pipeline.
