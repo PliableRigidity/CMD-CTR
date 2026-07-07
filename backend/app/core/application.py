@@ -628,6 +628,28 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(_index_existing_messages())
 
+    # Pre-warm the chat + embedding models so the FIRST user query doesn't pay
+    # model-load latency. Runs in the background — never blocks startup.
+    async def _warm_models():
+        import httpx as _httpx
+        from backend.config import CONVERSATION_MODEL, OLLAMA_CHAT_URL, KEEP_ALIVE
+        try:
+            async with _httpx.AsyncClient(timeout=120.0) as client:
+                await client.post(OLLAMA_CHAT_URL, json={
+                    "model": CONVERSATION_MODEL,
+                    "messages": [{"role": "user", "content": "ok"}],
+                    "stream": False,
+                    "keep_alive": KEEP_ALIVE,
+                    "options": {"num_predict": 1},
+                })
+            from backend.app.services.embedding_service import get_embedding
+            await get_embedding("warmup")
+            logger.info("LLM models pre-warmed (chat=%s + nomic-embed-text)", CONVERSATION_MODEL)
+        except Exception as exc:
+            logger.warning("Model pre-warm failed (non-fatal): %s", exc)
+
+    asyncio.create_task(_warm_models())
+
     probe_task = asyncio.create_task(_node_probe_loop(router))
     agent_task = asyncio.create_task(_agent_poll_loop(router))
     watch_task = asyncio.create_task(_watch_officer_loop(router))

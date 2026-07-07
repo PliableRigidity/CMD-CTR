@@ -1,0 +1,24 @@
+{
+  "base_url": null,
+  "request_timeout_seconds": 90,
+  "backend_start_command": "python main.py",
+  "backend_start_timeout_seconds": 150,
+  "test_command": "python agent/run_tests.py",
+  "test_timeout_seconds": 900,
+  "repair_prompt_path": "agent/reports/latest_repair_prompt.md",
+  "coding_agent_command": "claude",
+  "coding_agent_args": ["-p", "--permission-mode", "acceptEdits"],
+  "coding_agent_timeout_seconds": 1800,
+  "max_iterations": 5,
+  "max_same_failure_attempts": 3,
+  "auto_commit": true,
+  "rollback_on_worse": true,
+  "notes": {
+    "base_url": "null = auto-resolve from APP_PORT (env var or repo .env). Set explicitly to override.",
+    "coding_agent_command": "CLI executable for auto-repair; the repair prompt is piped to its stdin. Swap for any agent CLI, e.g. 'codex' with coding_agent_args ['exec'] or claude with ['-p', '--dangerously-skip-permissions'] for full-permission unattended runs.",
+    "coding_agent_args": "Arguments passed before stdin. Default lets Claude Code edit files headlessly without shell access; the autopilot handles testing/rollback itself.",
+    "auto_commit": "Commit kept repairs (runtime logs/ are always excluded from autopilot commits).",
+    "rollback_on_worse": "git reset --hard to the pre-repair checkpoint when results get worse or do not improve.",
+    "usage": "Copy to agent/config.json to override; config.json wins over this example file."
+  }
+}

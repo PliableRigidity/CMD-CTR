@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { animate } from "animejs";
-import { synthesizeSpeech, transcribeAudio, getWakeWsUrl } from "../../lib/api";
+import { transcribeAudio, getWakeWsUrl } from "../../lib/api";
 import WaveformVisualizer from "../voice/WaveformVisualizer";
 import VoiceOrb from "../voice/VoiceOrb";
 import RichOutput from "./RichOutput";
@@ -66,12 +66,10 @@ function VoiceDiagPanel({ diag, onClose }) {
     </div>
   );
 
-  const conf = diag.transcription_confidence != null
-    ? `${(diag.transcription_confidence * 100).toFixed(0)}%` : "—";
+  const conf = diag.transcription_confidence != null ? `${(diag.transcription_confidence * 100).toFixed(0)}%` : "—";
   const dur = diag.duration_seconds != null ? `${diag.duration_seconds.toFixed(2)}s` : "—";
   const size = diag.audio_size_bytes != null ? `${(diag.audio_size_bytes / 1024).toFixed(1)} kB` : "—";
-  const noSpeechProb = diag.no_speech_probability != null
-    ? `${(diag.no_speech_probability * 100).toFixed(0)}%` : "—";
+  const noSpeechProb = diag.no_speech_probability != null ? `${(diag.no_speech_probability * 100).toFixed(0)}%` : "—";
   const speechColor = diag.speech_detected ? "var(--accent-warm)" : "var(--danger)";
 
   return (
@@ -87,12 +85,8 @@ function VoiceDiagPanel({ diag, onClose }) {
         <span>Format</span><span>{diag.detected_extension || diag.mime_type || "—"}</span>
         <span>Speech detected</span>
         <span style={{ color: speechColor }}>{diag.speech_detected ? "yes" : "no"}</span>
-        {diag.vad_max_ema != null && (
-          <><span>Silero VAD EMA</span><span>{(diag.vad_max_ema * 100).toFixed(1)}%</span></>
-        )}
-        {diag.vad_speech_ratio != null && (
-          <><span>VAD speech ratio</span><span>{(diag.vad_speech_ratio * 100).toFixed(0)}% of frames</span></>
-        )}
+        {diag.vad_max_ema != null && (<><span>Silero VAD EMA</span><span>{(diag.vad_max_ema * 100).toFixed(1)}%</span></>)}
+        {diag.vad_speech_ratio != null && (<><span>VAD speech ratio</span><span>{(diag.vad_speech_ratio * 100).toFixed(0)}% of frames</span></>)}
         <span>Confidence</span><span>{conf}</span>
         <span>No-speech prob</span><span>{noSpeechProb}</span>
         <span>Fallback used</span>
@@ -100,31 +94,72 @@ function VoiceDiagPanel({ diag, onClose }) {
           {diag.fallback_used ? "yes (filtered)" : "no"}
         </span>
         {diag.language && (
-          <>
-            <span>Language</span>
-            <span>
-              {diag.language}
-              {diag.language_probability != null
-                ? ` (${(diag.language_probability * 100).toFixed(0)}%)` : ""}
-            </span>
-          </>
+          <><span>Language</span><span>{diag.language}{diag.language_probability != null ? ` (${(diag.language_probability * 100).toFixed(0)}%)` : ""}</span></>
         )}
         {diag.raw_transcript != null && (
-          <>
-            <span>Raw transcript</span>
-            <span className="voice-diag__transcript">
-              {diag.raw_transcript ? `"${diag.raw_transcript}"` : "(empty)"}
-            </span>
-          </>
+          <><span>Raw transcript</span><span className="voice-diag__transcript">{diag.raw_transcript ? `"${diag.raw_transcript}"` : "(empty)"}</span></>
         )}
         {diag.final_transcript != null && (
-          <>
-            <span>Final transcript</span>
-            <span className="voice-diag__transcript">
-              {diag.final_transcript ? `"${diag.final_transcript}"` : "(filtered)"}
-            </span>
-          </>
+          <><span>Final transcript</span><span className="voice-diag__transcript">{diag.final_transcript ? `"${diag.final_transcript}"` : "(filtered)"}</span></>
         )}
+      </div>
+    </div>
+  );
+}
+
+function VoiceSettingsPanel({ settings, onUpdate, onClose }) {
+  const timeout = settings?.conversationTimeoutMs ?? 8000;
+  return (
+    <div className="voice-settings-popover">
+      <div className="voice-settings-head">
+        <span>VOICE SETTINGS</span>
+        <button className="voice-diag__close" onClick={onClose}>×</button>
+      </div>
+      <div className="voice-settings-body">
+        <label className="voice-setting-row">
+          <span>Auto-Speak</span>
+          <span className="voice-setting-hint">Speak responses to voice commands</span>
+          <button
+            className={`voice-toggle${settings?.autoSpeak ? " voice-toggle--on" : ""}`}
+            onClick={() => onUpdate("autoSpeak", !settings?.autoSpeak)}
+          >
+            {settings?.autoSpeak ? "ON" : "OFF"}
+          </button>
+        </label>
+        <label className="voice-setting-row">
+          <span>Barge-In</span>
+          <span className="voice-setting-hint">Interrupt SILVIA while speaking</span>
+          <button
+            className={`voice-toggle${settings?.bargeIn ? " voice-toggle--on" : ""}`}
+            onClick={() => onUpdate("bargeIn", !settings?.bargeIn)}
+          >
+            {settings?.bargeIn ? "ON" : "OFF"}
+          </button>
+        </label>
+        <label className="voice-setting-row">
+          <span>Continuous Conversation</span>
+          <span className="voice-setting-hint">Keep mic open between turns</span>
+          <button
+            className={`voice-toggle${settings?.continuousConversation ? " voice-toggle--on" : ""}`}
+            onClick={() => onUpdate("continuousConversation", !settings?.continuousConversation)}
+          >
+            {settings?.continuousConversation ? "ON" : "OFF"}
+          </button>
+        </label>
+        <label className="voice-setting-row">
+          <span>Conversation Timeout</span>
+          <span className="voice-setting-hint">Silence before returning to sleep</span>
+          <select
+            className="voice-select"
+            value={timeout}
+            onChange={(e) => onUpdate("conversationTimeoutMs", parseInt(e.target.value))}
+          >
+            <option value={5000}>5 s</option>
+            <option value={8000}>8 s</option>
+            <option value={12000}>12 s</option>
+            <option value={30000}>30 s</option>
+          </select>
+        </label>
       </div>
     </div>
   );
@@ -142,45 +177,42 @@ export default function ConversationPanel({
   onClear,
   onVoiceStateChange,
   onError,
+  onStopSpeaking,
+  onReplayLast,
   voiceLoopEnabled = false,
   onVoiceLoopToggle,
   voiceLoopState = "idle",
   voiceLoopError = null,
+  voiceSettings,
+  onUpdateVoiceSetting,
 }) {
   const listRef = useRef(null);
   const inputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]);
-  const ttsSourceRef = useRef(null);
-  const ttsCtxRef = useRef(null);
 
   const [stream, setStream] = useState(null);
-  // Local recording state machine: "idle" | "recording" | "processing"
   const [recordingState, setRecordingState] = useState("idle");
   const [conversationMode, setConversationMode] = useState(false);
   const [wakeWordMode, setWakeWordMode] = useState(false);
   const [lastDiag, setLastDiag] = useState(null);
   const [showDiag, setShowDiag] = useState(false);
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
 
-  // anime.js targets
   const inputBayRef = useRef(null);
   const prevMessageCountRef = useRef(0);
 
-  // Stable refs for use inside async callbacks / setTimeout
   const conversationModeRef = useRef(false);
   const recordingStateRef = useRef("idle");
   const pendingRef = useRef(false);
   const speakingRef = useRef(false);
   const shouldAutoListenRef = useRef(false);
-
-  // Wake word mode refs
   const wakeWordModeRef = useRef(false);
   const wakeWsRef = useRef(null);
   const wakeAudioCtxRef = useRef(null);
   const wakeProcessorRef = useRef(null);
   const wakeStreamRef = useRef(null);
 
-  // Keep refs in sync with state/props
   useEffect(() => { conversationModeRef.current = conversationMode; }, [conversationMode]);
   useEffect(() => { recordingStateRef.current = recordingState; }, [recordingState]);
   useEffect(() => { pendingRef.current = pending; }, [pending]);
@@ -188,17 +220,14 @@ export default function ConversationPanel({
   useEffect(() => { wakeWordModeRef.current = wakeWordMode; }, [wakeWordMode]);
   useEffect(() => { startListeningRef.current = startListening; });
 
-  // Cleanup wake word resources on unmount
   useEffect(() => () => _stopWakeWord(), []);
 
-  // Scroll to bottom when messages change
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [messages, pending]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
-  // anime.js: fade+slide new messages in
   useEffect(() => {
     const count = messages.length;
     if (count > prevMessageCountRef.current && listRef.current) {
@@ -211,7 +240,6 @@ export default function ConversationPanel({
     prevMessageCountRef.current = count;
   }, [messages.length]);
 
-  // anime.js: panel glow pulses when pending
   useEffect(() => {
     if (pending && inputBayRef.current) {
       animate(inputBayRef.current, {
@@ -222,23 +250,18 @@ export default function ConversationPanel({
     }
   }, [pending]);
 
-  // Conversation mode: when SILVIA finishes responding (and stops speaking), auto-listen
+  // Conversation mode: auto-listen after SILVIA finishes responding and speaking
   const prevPendingRef = useRef(false);
-  const prevSpeakingRef = useRef(false);
-  // startListeningRef lets us call startListening from effects without adding it to deps
   const startListeningRef = useRef(null);
 
   useEffect(() => {
     const pendingJustEnded = prevPendingRef.current && !pending;
     prevPendingRef.current = pending;
-    prevSpeakingRef.current = !!voice?.speaking;
 
-    // When SILVIA finishes thinking, set auto-listen flag
     if (pendingJustEnded && conversationMode) {
       shouldAutoListenRef.current = true;
     }
 
-    // Fire auto-listen when all clear: not pending, not speaking, not already recording
     if (
       shouldAutoListenRef.current &&
       !pending &&
@@ -247,7 +270,7 @@ export default function ConversationPanel({
     ) {
       shouldAutoListenRef.current = false;
       const t = setTimeout(() => {
-        if (conversationModeRef.current && recordingStateRef.current === "idle" && !pendingRef.current) {
+        if (conversationModeRef.current && recordingStateRef.current === "idle" && !pendingRef.current && !speakingRef.current) {
           startListeningRef.current?.();
         }
       }, 700);
@@ -255,7 +278,6 @@ export default function ConversationPanel({
     }
   }, [pending, voice?.speaking, conversationMode, recordingState]);
 
-  // Silence detection state (mirrors Silero VAD logic from llm-voice-assistant)
   const silenceTimerRef = useRef(null);
   const hasSpokenRef = useRef(false);
   const vadIntervalRef = useRef(null);
@@ -268,7 +290,6 @@ export default function ConversationPanel({
     hasSpokenRef.current = false;
   }
 
-  // ── Wake word mode ──────────────────────────────────────────────────────────
   function _stopWakeWord() {
     if (wakeWsRef.current) { wakeWsRef.current.close(); wakeWsRef.current = null; }
     if (wakeProcessorRef.current) { wakeProcessorRef.current.disconnect(); wakeProcessorRef.current = null; }
@@ -280,14 +301,12 @@ export default function ConversationPanel({
     if (wakeWordMode) {
       _stopWakeWord();
       setWakeWordMode(false);
-      wakeWordModeRef.current = false;
       return;
     }
     try {
       const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       wakeStreamRef.current = micStream;
 
-      // Force 16 kHz — openwakeword's required sample rate
       const ctx = new AudioContext({ sampleRate: 16000 });
       wakeAudioCtxRef.current = ctx;
 
@@ -300,45 +319,37 @@ export default function ConversationPanel({
           if (msg.wake && msg.accepted && recordingStateRef.current === "idle" && !pendingRef.current && !speakingRef.current) {
             startListeningRef.current?.();
           }
-        } catch { /* ignore parse errors */ }
+        } catch {}
       };
 
       ws.onclose = (ev) => {
         if (wakeWordModeRef.current) {
           setWakeWordMode(false);
-          wakeWordModeRef.current = false;
-          onError?.(`Wake word disconnected (code ${ev.code}${ev.reason ? ": " + ev.reason : ""})`);
+          onError?.(`Wake word disconnected (code ${ev.code})`);
         }
       };
 
-      // Wait for WebSocket to open
       await new Promise((resolve, reject) => {
         ws.onopen = resolve;
-        const t = setTimeout(() => reject(new Error("WebSocket connection timed out")), 15000);
-        ws.onerror = (ev) => { clearTimeout(t); reject(new Error(`WebSocket error (${ev.type})`)); };
-        ws.onclose = (ev) => { clearTimeout(t); reject(new Error(`WebSocket closed before open (code ${ev.code})`)); };
+        const t = setTimeout(() => reject(new Error("WebSocket timed out")), 15000);
+        ws.onerror = () => { clearTimeout(t); reject(new Error("WebSocket error")); };
       });
 
-      // Restore persistent close handler now that connection is established
       ws.onclose = (ev) => {
         if (wakeWordModeRef.current) {
           setWakeWordMode(false);
-          wakeWordModeRef.current = false;
-          onError?.(`Wake word disconnected (code ${ev.code}${ev.reason ? ": " + ev.reason : ""})`);
+          onError?.(`Wake word disconnected (code ${ev.code})`);
         }
       };
       ws.onerror = () => ws.close();
 
-      // ScriptProcessorNode: 1280 samples = exactly 80 ms at 16 kHz
       const source = ctx.createMediaStreamSource(micStream);
       const processor = ctx.createScriptProcessor(1024, 1, 1);
       wakeProcessorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
         if (!wakeWsRef.current || wakeWsRef.current.readyState !== WebSocket.OPEN) return;
-        // Don't send while we're already recording — avoids double-mic contention
         if (recordingStateRef.current !== "idle") return;
-
         const float32 = e.inputBuffer.getChannelData(0);
         const int16 = new Int16Array(float32.length);
         for (let i = 0; i < float32.length; i++) {
@@ -347,24 +358,18 @@ export default function ConversationPanel({
         wakeWsRef.current.send(int16.buffer);
       };
 
-      // Must connect processor to destination for onaudioprocess to fire
       source.connect(processor);
       processor.connect(ctx.destination);
-
       setWakeWordMode(true);
-      wakeWordModeRef.current = true;
     } catch (err) {
       _stopWakeWord();
       onError?.(`Wake word failed: ${err.message}`);
     }
   }
-  // ── end wake word ────────────────────────────────────────────────────────────
 
   async function startListening() {
-    // Keep ref updated so effects can call this without dep-loop
     startListeningRef.current = startListening;
     if (recordingStateRef.current !== "idle") return;
-    // Don't start mic while a response is still streaming
     if (pendingRef.current) return;
     try {
       const mic = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -373,31 +378,19 @@ export default function ConversationPanel({
       recordingStateRef.current = "recording";
       await onVoiceStateChange?.({ listening: true });
 
-      const preferredTypes = [
-        "audio/webm;codecs=opus", "audio/webm",
-        "audio/ogg;codecs=opus", "audio/ogg",
-      ];
+      const preferredTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg"];
       const mimeType = preferredTypes.find((t) => MediaRecorder.isTypeSupported(t)) || "";
-      const recorder = mimeType
-        ? new MediaRecorder(mic, { mimeType })
-        : new MediaRecorder(mic);
+      const recorder = mimeType ? new MediaRecorder(mic, { mimeType }) : new MediaRecorder(mic);
 
       chunksRef.current = [];
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
 
-      // ── Silence-detection VAD (mirrors llm-voice-assistant Silero VAD logic) ──
-      // Use Web Audio API AnalyserNode: poll amplitude every 100ms.
-      // When user speaks then goes silent for SILENCE_MS, auto-stop recording.
-      // This is the client-side equivalent of the Python Silero VAD + vad_delay logic.
-      const SILENCE_THRESHOLD = 15;    // 0-255 frequency amplitude; raised to avoid ambient-noise false triggers
-      const SILENCE_MS = 600;          // ms of silence before auto-stop
-      const MIN_SPEECH_MS = 300;       // minimum speech duration before silence check kicks in
-      const MAX_RECORDING_MS = 20000;  // hard cap — stop even if VAD never detects silence
+      const SILENCE_THRESHOLD = 15;
+      const SILENCE_MS = 600;
+      const MIN_SPEECH_MS = 300;
+      const MAX_RECORDING_MS = 20000;
       let speechStart = null;
 
-      // Hard-cap timer: force-stop if recording runs too long with no auto-stop
       const maxRecordingTimer = setTimeout(() => {
         if (recordingStateRef.current === "recording") recorder.stop();
       }, MAX_RECORDING_MS);
@@ -417,33 +410,18 @@ export default function ConversationPanel({
           const avg = freqData.reduce((a, b) => a + b, 0) / freqData.length;
 
           if (avg > SILENCE_THRESHOLD) {
-            // Sound detected
-            if (!hasSpokenRef.current) {
-              hasSpokenRef.current = true;
-              speechStart = Date.now();
-            }
-            // Reset silence timer whenever there's sound
-            if (silenceTimerRef.current) {
-              clearTimeout(silenceTimerRef.current);
-              silenceTimerRef.current = null;
-            }
+            if (!hasSpokenRef.current) { hasSpokenRef.current = true; speechStart = Date.now(); }
+            if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
           } else if (hasSpokenRef.current) {
-            // Silence after speech — only auto-stop if minimum speech duration met
             const spokenMs = speechStart ? Date.now() - speechStart : 0;
             if (spokenMs >= MIN_SPEECH_MS && !silenceTimerRef.current) {
               silenceTimerRef.current = setTimeout(() => {
-                // Auto-stop — same as pressing the Stop button manually
-                if (recordingStateRef.current === "recording") {
-                  recorder.stop();
-                }
+                if (recordingStateRef.current === "recording") recorder.stop();
               }, SILENCE_MS);
             }
           }
         }, 100);
-      } catch {
-        // Web Audio not available — fall back to manual stop only
-      }
-      // ── end VAD ──────────────────────────────────────────────────────────────
+      } catch {}
 
       recorder.onstop = async () => {
         clearTimeout(maxRecordingTimer);
@@ -464,17 +442,13 @@ export default function ConversationPanel({
           recordingStateRef.current = "idle";
 
           if (result.text) {
-            // Submit — auto-listen will re-arm via pendingJustEnded in useEffect after stream ends
             await onSubmit(result.text, { voice: true });
-          } else {
-            // No speech detected — retry listening if not pending
-            if (conversationModeRef.current) {
-              setTimeout(() => {
-                if (conversationModeRef.current && recordingStateRef.current === "idle" && !pendingRef.current) {
-                  startListeningRef.current?.();
-                }
-              }, 1200);
-            }
+          } else if (conversationModeRef.current) {
+            setTimeout(() => {
+              if (conversationModeRef.current && recordingStateRef.current === "idle" && !pendingRef.current) {
+                startListeningRef.current?.();
+              }
+            }, 1200);
           }
         } catch (err) {
           setRecordingState("idle");
@@ -504,63 +478,20 @@ export default function ConversationPanel({
     setConversationMode(next);
     conversationModeRef.current = next;
     if (next) {
-      // Entering conversation mode: start listening now if idle
       shouldAutoListenRef.current = false;
       if (recordingStateRef.current === "idle" && !pendingRef.current) {
         setTimeout(() => startListeningRef.current?.(), 300);
       }
     } else {
-      // Leaving conversation mode: cancel pending auto-listen, stop if recording
       shouldAutoListenRef.current = false;
       if (recordingStateRef.current === "recording") stopListening();
     }
   }
 
-  async function speakLatest() {
-    const latest = [...messages].reverse().find((m) => m.role === "assistant");
-    const speechText = latest?.payload?.speech_text || latest?.answer;
-    if (!speechText) return;
-    await onVoiceStateChange?.({ speaking: true });
-    try {
-      const buffer = await synthesizeSpeech(speechText);
-      const ctx = new AudioContext();
-      ttsCtxRef.current = ctx;
-      const decoded = await ctx.decodeAudioData(buffer);
-      const src = ctx.createBufferSource();
-      ttsSourceRef.current = src;
-      src.buffer = decoded;
-      src.connect(ctx.destination);
-      src.onended = () => {
-        ttsSourceRef.current = null;
-        ttsCtxRef.current = null;
-        ctx.close();
-        onVoiceStateChange?.({ speaking: false });
-      };
-      src.start();
-    } catch (err) {
-      ttsSourceRef.current = null;
-      ttsCtxRef.current = null;
-      await onVoiceStateChange?.({ speaking: false });
-      onError?.(`TTS failed: ${err.message}`);
-    }
-  }
-
-  function stopSpeaking() {
-    if (ttsSourceRef.current) {
-      try { ttsSourceRef.current.stop(); } catch {}
-      ttsSourceRef.current = null;
-    }
-    if (ttsCtxRef.current) {
-      try { ttsCtxRef.current.close(); } catch {}
-      ttsCtxRef.current = null;
-    }
-    onVoiceStateChange?.({ speaking: false });
-  }
-
   function _flashExec() {
     if (!inputBayRef.current) return;
     animate(inputBayRef.current, {
-      backgroundColor: ["rgba(0,229,255,0.10)", "rgba(3,8,11,0.55)"],
+      borderColor: ["rgba(0,229,255,0.70)", "rgba(0,229,255,0.42)"],
       duration: 420,
       ease: "outQuad",
     });
@@ -584,24 +515,27 @@ export default function ConversationPanel({
   const isProcessing = recordingState === "processing";
   const isSpeaking = voice?.speaking;
 
+  // Determine VoiceOrb state — priority order: speaking > recording > processing > voice loop > wake word > conversation > idle
+  function getOrbState() {
+    if (isSpeaking) return "speaking";
+    if (pending) return "thinking";
+    if (isRecording) return "recording";
+    if (isProcessing) return "processing";
+    if (voiceLoopEnabled) return voiceLoopState;
+    if (wakeWordMode) return "listening";
+    if (conversationMode) return "listening";
+    return "idle";
+  }
+
   return (
     <section className="panel conversation-panel">
       <div className="panel-heading">
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <VoiceOrb
-            state={
-              isSpeaking ? "speaking"
-              : pending ? "thinking"
-              : isRecording ? "recording"
-              : isProcessing ? "processing"
-              : voiceLoopEnabled ? voiceLoopState
-              : wakeWordMode ? "listening"
-              : conversationMode ? "listening"
-              : "idle"
-            }
+            state={getOrbState()}
             size={28}
             showLabel={false}
-            onClick={isSpeaking ? stopSpeaking : undefined}
+            onClick={isSpeaking ? onStopSpeaking : undefined}
           />
           <div>
             <p className="eyebrow">Mission Core / Assistant Bus</p>
@@ -610,7 +544,9 @@ export default function ConversationPanel({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           {isSpeaking && (
-            <button type="button" onClick={stopSpeaking} className="btn-ghost-sm" style={{ color: "var(--danger)" }}>STOP</button>
+            <button type="button" onClick={onStopSpeaking} className="btn-ghost-sm" style={{ color: "var(--danger)" }}>
+              ■ STOP
+            </button>
           )}
           {onClear && (
             <button type="button" onClick={onClear} className="btn-ghost-sm">CLEAR</button>
@@ -625,34 +561,18 @@ export default function ConversationPanel({
         <span>{mode === "decision" ? "COUNCIL PATH" : "DIRECT ASSIST PATH"}</span>
         <span>{pending ? "PROCESSING" : "STANDBY"}</span>
         {isRecording && !voiceLoopEnabled && <span style={{ color: "var(--danger)" }}>● LISTENING</span>}
-        {isProcessing && !voiceLoopEnabled && <span style={{ color: "var(--accent)" }}>◌ AUDIO</span>}
-        {isSpeaking && <span style={{ color: "var(--accent-warm)" }}>● SPEAKING</span>}
-        {wakeWordMode && !isRecording && !isProcessing && (
-          <span style={{ color: "var(--accent-warm)", animation: "pulse 2s infinite" }}>◎ WAKE ACTIVE</span>
+        {isProcessing && !voiceLoopEnabled && <span style={{ color: "var(--accent)" }}>◌ TRANSCRIBING</span>}
+        {isSpeaking && <span style={{ color: "#00ff88" }}>● SPEAKING{voiceSettings?.bargeIn ? " · speak to interrupt" : ""}</span>}
+        {wakeWordMode && !isRecording && !isSpeaking && (
+          <span style={{ color: "var(--accent-warm)", animation: "pulse 2s infinite" }}>◎ WAKE WORD</span>
         )}
-        {conversationMode && !wakeWordMode && !isRecording && !isProcessing && !isSpeaking && !pending && !voiceLoopEnabled && (
-          <span style={{ color: "var(--muted)" }}>⟳ CONV STANDBY</span>
+        {conversationMode && !wakeWordMode && !isRecording && !isSpeaking && !pending && !voiceLoopEnabled && (
+          <span style={{ color: "var(--muted)" }}>⟳ CONVERSATION</span>
         )}
-        {voiceLoopEnabled && voiceLoopState === "listening" && (
-          <span style={{ color: "var(--accent-warm)", animation: "pulse 2s infinite" }}>⊛ LOOP LISTENING</span>
-        )}
-        {voiceLoopEnabled && voiceLoopState === "wake_detected" && (
-          <span style={{ color: "var(--accent)" }}>⊛ WAKE DETECTED</span>
-        )}
-        {voiceLoopEnabled && voiceLoopState === "armed" && (
-          <span style={{ color: "var(--accent-warm)" }}>⊛ ARMED — speak now</span>
-        )}
-        {voiceLoopEnabled && voiceLoopState === "recording" && (
-          <span style={{ color: "var(--danger)" }}>⊛ LOOP REC</span>
-        )}
-        {voiceLoopEnabled && voiceLoopState === "processing" && (
-          <span style={{ color: "var(--accent)" }}>⊛ LOOP TX</span>
-        )}
-        {voiceLoopEnabled && voiceLoopState === "cooldown" && (
-          <span style={{ color: "var(--muted)" }}>⊛ COOLDOWN</span>
-        )}
-        {voiceLoopEnabled && voiceLoopState === "error" && (
-          <span style={{ color: "var(--danger)" }}>⊛ LOOP ERR</span>
+        {voiceLoopEnabled && (
+          <span style={{ color: voiceLoopState === "recording" ? "var(--danger)" : voiceLoopState === "speaking" ? "#00ff88" : voiceLoopState === "conversation_active" ? "var(--accent-warm)" : "var(--accent-warm)", animation: "pulse 2s infinite" }}>
+            ⊛ {voiceLoopState === "listening" ? "WAKE WORD" : voiceLoopState === "recording" ? "LISTENING" : voiceLoopState === "processing" ? "THINKING" : voiceLoopState === "speaking" ? "SPEAKING" : voiceLoopState === "conversation_active" ? "WAITING FOR REPLY" : voiceLoopState === "listening_again" ? "LISTENING" : voiceLoopState === "cooldown" ? "…" : voiceLoopState.toUpperCase()}
+          </span>
         )}
       </div>
 
@@ -682,9 +602,16 @@ export default function ConversationPanel({
       </div>
 
       {error ? <div className="error-banner">{error}</div> : null}
-      {voiceLoopError ? <div className="error-banner">Loop: {voiceLoopError}</div> : null}
+      {voiceLoopError ? <div className="error-banner">Voice: {voiceLoopError}</div> : null}
 
       {showDiag && <VoiceDiagPanel diag={lastDiag} onClose={() => setShowDiag(false)} />}
+      {showVoiceSettings && (
+        <VoiceSettingsPanel
+          settings={voiceSettings}
+          onUpdate={onUpdateVoiceSetting}
+          onClose={() => setShowVoiceSettings(false)}
+        />
+      )}
 
       <form className="composer" onSubmit={handleSubmit}>
         <div className="composer__inputbay" ref={inputBayRef}>
@@ -706,9 +633,9 @@ export default function ConversationPanel({
               onKeyDown={handleKeyDown}
               placeholder={
                 voiceLoopEnabled
-                  ? "hands-free loop active · say 'hey silvia' to begin · or type"
+                  ? "voice mode active · say 'hey silvia' to begin · or type"
                   : wakeWordMode
-                  ? "say 'hey silvia' to activate · or type command"
+                  ? "say 'hey silvia' to activate · or type"
                   : conversationMode
                   ? "conversation active · speak or type"
                   : mode === "decision"
@@ -720,32 +647,33 @@ export default function ConversationPanel({
           </div>
           <div className="composer__footer">
             <div className="voice-controls-inline">
-              {/* Hands-free loop toggle */}
+
+              {/* Primary: Hands-free voice loop */}
               <button
                 type="button"
                 className={`voice-btn${voiceLoopEnabled ? " voice-btn--conv" : ""}`}
                 onClick={onVoiceLoopToggle}
                 title={voiceLoopEnabled
-                  ? "Hands-free loop ON — wake → record → chat → TTS → listen. Click to stop."
-                  : "Hands-free loop — say 'hey silvia', SILVIA handles the rest"}
+                  ? "Voice mode ON — wake word activates mic, SILVIA speaks back automatically"
+                  : "Voice mode — hands-free conversation with SILVIA"}
               >
-                {voiceLoopEnabled ? "⊛ Loop ON" : "⊛ Loop"}
+                {voiceLoopEnabled ? "⊛ Voice ON" : "⊛ Voice"}
               </button>
 
-              {/* Wake word toggle */}
-              <button
-                type="button"
-                className={`voice-btn${wakeWordMode ? " voice-btn--conv" : ""}`}
-                onClick={toggleWakeWordMode}
-                title={wakeWordMode
-                  ? "Wake word ON — say 'hey silvia' to activate mic. Click to stop."
-                  : "Wake word mode — say 'hey silvia' to start listening"}
-              >
-                {wakeWordMode ? "◎ Wake ON" : "◎ Wake"}
-              </button>
+              {/* Wake word (standalone, without full loop) */}
+              {!voiceLoopEnabled && (
+                <button
+                  type="button"
+                  className={`voice-btn${wakeWordMode ? " voice-btn--conv" : ""}`}
+                  onClick={toggleWakeWordMode}
+                  title={wakeWordMode ? "Wake word ON" : "Wake word — say 'hey silvia'"}
+                >
+                  {wakeWordMode ? "◎ Wake ON" : "◎ Wake"}
+                </button>
+              )}
 
-              {/* Push-to-talk (hidden when wake word mode is active) */}
-              {!wakeWordMode && (isRecording ? (
+              {/* Push-to-talk */}
+              {!voiceLoopEnabled && !wakeWordMode && (isRecording ? (
                 <button type="button" className="voice-btn voice-btn--active" onClick={stopListening}>
                   ■ Stop
                 </button>
@@ -755,36 +683,45 @@ export default function ConversationPanel({
                   className="voice-btn"
                   onClick={startListening}
                   disabled={isProcessing || conversationMode || pending}
-                  title="Push-to-talk"
                 >
                   {isProcessing ? "◌ …" : "◉ Mic"}
                 </button>
               ))}
 
-              {/* Conversation mode toggle */}
-              <button
-                type="button"
-                className={`voice-btn${conversationMode ? " voice-btn--conv" : ""}`}
-                onClick={toggleConversationMode}
-                title={conversationMode
-                  ? "Conversation mode ON — click to stop"
-                  : "Conversation mode — SILVIA listens again after each response"}
-              >
-                {conversationMode ? "⟳ Conv ON" : "⟳ Conv"}
-              </button>
+              {/* Conversation mode (push-to-talk with auto-relisten) */}
+              {!voiceLoopEnabled && (
+                <button
+                  type="button"
+                  className={`voice-btn${conversationMode ? " voice-btn--conv" : ""}`}
+                  onClick={toggleConversationMode}
+                  title={conversationMode ? "Conversation mode ON" : "Conversation mode — auto-relisten after responses"}
+                >
+                  {conversationMode ? "⟳ Conv ON" : "⟳ Conv"}
+                </button>
+              )}
 
-              {/* Speak last response */}
+              {/* Replay last response */}
               <button
                 type="button"
                 className="voice-btn"
-                onClick={speakLatest}
+                onClick={onReplayLast}
                 disabled={isSpeaking}
-                title="Speak last SILVIA response aloud"
+                title="Replay last SILVIA response"
               >
-                {isSpeaking ? "…" : "▶"}
+                {isSpeaking ? "●" : "▶"}
               </button>
 
-              {/* STT diagnostics toggle */}
+              {/* Voice settings */}
+              <button
+                type="button"
+                className={`voice-btn voice-btn--sm${showVoiceSettings ? " voice-btn--conv" : ""}`}
+                onClick={() => setShowVoiceSettings((s) => !s)}
+                title="Voice settings"
+              >
+                ⚙
+              </button>
+
+              {/* STT diagnostics */}
               <button
                 type="button"
                 className="voice-btn voice-btn--sm"

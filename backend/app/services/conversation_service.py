@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+from collections import deque
 
 import httpx
 
@@ -186,6 +187,164 @@ _ENTITY_INFO_RE = re.compile(
     re.I,
 )
 
+# ── LLM pipeline timing (rolling) ──────────────────────────────────────────────
+# Each _generate_response_stream call appends a phase-breakdown record here so we
+# can see exactly where chat latency goes: context build, the embed/memory search,
+# time-to-first-token, and generation throughput.
+_LLM_TIMINGS: deque[dict] = deque(maxlen=20)
+
+# Chat latency: "show chat latency" / "llm latency" / "why is silvia slow"
+_CHAT_LATENCY_RE = re.compile(
+    r"(?:show\s+)?(?:chat|llm|response)\s+latency|llm\s+timing|"
+    r"why\s+(?:is\s+)?(?:silvia\s+)?(?:so\s+)?slow|what(?:'s|\s+is)\s+(?:the\s+)?(?:chat|llm)\s+(?:speed|timing)",
+    re.I,
+)
+
+# ── Deterministic follow-up classifier ────────────────────────────────────────
+# Decides whether SILVIA genuinely needs an immediate user reply. Default False.
+# A question mark is NOT sufficient — polite closings and open-ended pleasantries
+# ("feel free to ask", "anything else?") must NOT trigger follow-up.
+
+# Conversation closers / pleasantries — never require an immediate answer.
+_FOLLOWUP_CLOSER_RE = re.compile(
+    r"\b(?:"
+    r"feel free to (?:ask|reach out|let me know)|just (?:ask|let me know)|"
+    r"let me know\b|if you (?:need|have|'?d like|want)\s|"
+    r"any(?:thing)?\s+else\b|is there anything else|"
+    r"happy to (?:help|assist)|glad to (?:help|assist)|here (?:to help|if you|whenever)|"
+    r"my pleasure|you'?re welcome|no problem|no worries|any\s?time\b|"
+    r"have a (?:good|great|nice|wonderful)|take care|don'?t hesitate|"
+    r"how (?:can|may) i (?:help|assist)|what else (?:can|could|would)"
+    r")", re.I,
+)
+
+# Explicit follow-up intents (evaluated in priority order).
+_FU_MISSING_PARAM_RE = re.compile(
+    r"\b(?:which\b.*\bshould i\b|what\b.*\bshould i\b|"
+    r"what (?:node|project|file|name|value|reminder|time|date|directory|folder|app|host|target|model|topic)\b|"
+    r"please (?:provide|specify|enter|give me|tell me))", re.I,
+)
+_FU_CHOICE_RE = re.compile(
+    r"(?:\bwould you (?:like|prefer)\b.*\bor\b|\bdo you want\b.*\bor\b|"
+    r"\bwhich (?:one|of|option|version)\b|\b[\w\-]+\s+or\s+[\w\-]+\s*\?)", re.I,
+)
+_FU_CONFIRM_RE = re.compile(
+    r"\b(?:are you sure|do you want me to (?:delete|remove|cancel|stop|overwrite|clear|reset|disable|send)|"
+    r"shall i (?:delete|remove|cancel|send)|confirm\b|is (?:that|this|it) (?:correct|right|ok|okay)|"
+    r"y/n|yes\s*/\s*no)", re.I,
+)
+_FU_APPROVAL_RE = re.compile(
+    r"\b(?:should i\b|shall i\b|do you want me to\b|would you like me to\b|may i\b|"
+    r"can i (?:go ahead|proceed)|go ahead\?|proceed\?)", re.I,
+)
+_FU_CLARIFY_RE = re.compile(
+    r"\b(?:which\b|what do you mean\b|what exactly\b|whom\b|who\b.*\?|where\b.*\?|when\b.*\?|"
+    r"can you (?:clarify|be more specific|elaborate))", re.I,
+)
+_FU_DIRECT_Q_RE = re.compile(
+    r"\b(?:what would you like|what do you (?:want|think)|how does that (?:sound|look)|"
+    r"how should we|how do you want|where should we|what'?s next|what next)", re.I,
+)
+
+
+def should_enter_followup(text: str, has_pending: bool = False,
+                          pending_kind: str | None = None) -> tuple[bool, str]:
+    """Deterministically decide whether a reply needs an immediate user response.
+
+    Returns (expects_reply, followup_reason). Default is (False, "none").
+    NOT punctuation-only: a "?" is necessary but not sufficient, and conversation
+    closers are excluded even when phrased as questions.
+    """
+    # A pending confirmation always awaits the user's reply.
+    if has_pending:
+        return True, (pending_kind or "confirmation")
+    if not text or "?" not in text:
+        return False, "none"
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    q_sents = [s for s in sentences if s.rstrip().endswith("?")]
+    if not q_sents:
+        return False, "none"
+    for s in q_sents:
+        # Strong explicit intents win even if a closer phrase sits nearby.
+        if _FU_MISSING_PARAM_RE.search(s):
+            return True, "missing_parameter"
+        if _FU_CHOICE_RE.search(s):
+            return True, "choice"
+        if _FU_CONFIRM_RE.search(s):
+            return True, "confirmation"
+        if _FU_APPROVAL_RE.search(s):
+            return True, "approval"
+        if _FU_CLARIFY_RE.search(s):
+            return True, "clarification"
+        if _FU_DIRECT_Q_RE.search(s):
+            return True, "clarification"
+        # A generic question only counts if it is NOT a conversational closer.
+        if not _FOLLOWUP_CLOSER_RE.search(s):
+            return True, "clarification"
+    return False, "none"
+
+
+def _followup_explanation(text: str, expects_reply: bool, reason: str, has_pending: bool) -> str:
+    if has_pending:
+        return f"A pending {reason} is awaiting your response."
+    if expects_reply:
+        return f"Detected a {reason.replace('_', ' ')} question that needs an answer to continue."
+    if text and "?" in text:
+        return "A question was present but it is a conversational closer (e.g. 'feel free to ask') — no answer required."
+    return "No question or request needing an immediate answer (statement / completed action / polite closing)."
+
+
+# Last voice follow-up decision (for "show last voice decision").
+_LAST_VOICE_DECISION: dict = {}
+
+# "show last voice decision" / "why did silvia keep listening"
+_VOICE_DECISION_RE = re.compile(
+    r"(?:show\s+)?last\s+voice\s+decision|why\s+did\s+(?:silvia\s+)?(?:keep|stay)\s+listening|"
+    r"(?:show\s+)?(?:last\s+)?follow.?up\s+decision",
+    re.I,
+)
+
+# Voice latency: "show voice latency" / "voice latency" / "how fast is voice"
+_VOICE_LATENCY_RE = re.compile(
+    r"(?:show\s+)?voice\s+latency|how\s+fast\s+(?:is|was)\s+(?:the\s+)?voice|voice\s+speed|tts\s+latency",
+    re.I,
+)
+
+# Voice mode: "show voice mode" / "what voice mode" / "current voice mode"
+_VOICE_MODE_RE = re.compile(
+    r"(?:show|what(?:'?s| is)?|current|which)\s+voice\s+mode|^voice\s+mode\b",
+    re.I,
+)
+
+# Voice diagnostics: "show voice diagnostics" / "voice diagnostics" / "voice status"
+_VOICE_DIAG_RE = re.compile(
+    r"(?:show\s+)?voice\s+diag(?:nostics?)?|voice\s+(?:system\s+)?status|voice\s+pipeline\s+status",
+    re.I,
+)
+
+# TTS diagnostics: "show tts diagnostics" / "tts status" / "voice tts diagnostics"
+_TTS_DIAG_RE = re.compile(
+    r"show\s+tts\s+diag|tts\s+(?:status|diag)|voice\s+tts\s+diag|"
+    r"what\s+is\s+(?:the\s+)?tts\s+(?:doing|status)|tts\s+debug",
+    re.I,
+)
+
+# Wake word diagnostics: "show wake diagnostics" / "wake word status" / "why isn't the wake word working"
+_WAKE_DIAG_RE = re.compile(
+    r"(?:show\s+)?wake\s+(?:word\s+)?diag(?:nostics?)?|wake\s+(?:word\s+)?status|"
+    r"why\s+(?:isn'?t|does?n'?t)\s+(?:the\s+)?wake\s+(?:word\s+)?work|"
+    r"wake\s+word\s+(?:not\s+)?(?:working|broken|stuck|dead|disabled)|"
+    r"voice\s+(?:not\s+)?(?:listening|waking|activating)",
+    re.I,
+)
+
+# Reset wake cooldown: "reset wake cooldown" / "clear wake cooldown" / "wake word stuck"
+_WAKE_RESET_RE = re.compile(
+    r"reset\s+wake(?:\s+word)?\s+cooldown|clear\s+wake(?:\s+word)?\s+cooldown|"
+    r"wake\s+(?:word\s+)?(?:is\s+)?stuck|unstick\s+wake|fix\s+wake\s+word",
+    re.I,
+)
+
 # User correction: "[entity] is just a Pi NAS" / "[entity] doesn't have a camera"
 # Only fires on correction indicators (just/only/actually/doesn't/has no) so
 # "nighthawk is online" (state assertion) is NOT caught here.
@@ -337,14 +496,46 @@ class ConversationService:
             _persist(cap_response.answer)
             return _stamp(cap_response)
         if _MY_PROJECTS_RE.search(_raw_q):
-            from backend.app.services.project_registry import list_projects
-            _proj_ans = (
-                f"Known projects: {list_projects()}. "
-                "Say the project name for details, or 'show tasks' to see what's queued."
-            )
-            _proj_resp = self._simple_response("Projects", _proj_ans)
-            _persist(_proj_ans)
+            # Try Brain63 first for grounded retrieval; fall back to static registry.
+            _proj_resp = self._projects_from_brain63_or_registry(_raw_q)
+            _persist(_proj_resp.answer)
             return _stamp(_proj_resp)
+
+        # Extended project queries: "what are my robotics projects?", category-specific.
+        _m_cat_proj = re.match(
+            r"^what\s+(?:are\s+)?(?:my\s+)?(\w+)\s+projects?\s*[\?\.!]?$", _raw_q, re.I
+        )
+        if _m_cat_proj:
+            _cat = _m_cat_proj.group(1).lower()
+            if _cat not in ("current", "ongoing", "active", "all", "main"):
+                _proj_resp = self._projects_from_brain63_or_registry(_raw_q, category=_cat)
+                _persist(_proj_resp.answer)
+                return _stamp(_proj_resp)
+
+        # Explicit Obsidian/Brain63 knowledge requests must be served from vault directly.
+        if re.search(r"\b(?:obsidian|brain\s*63)\b", _raw_q, re.I) and re.search(
+            r"(?:projects?|notes?|know|summarize?|what.*know)", _raw_q, re.I
+        ):
+            _proj_resp = self._projects_from_brain63_or_registry(_raw_q)
+            _persist(_proj_resp.answer)
+            return _stamp(_proj_resp)
+
+        # Decision queries must be grounded in Brain63 before reaching MAGI/LLM.
+        # This prevents the LLM from inventing decisions or note contents.
+        _m_dec = _DECISION_QUERY_RE.search(_raw_q)
+        if _m_dec:
+            _dec_entity = next((g for g in _m_dec.groups() if g), "")
+            _dec_answer = self._brain63_entity_answer(_dec_entity, "decisions")
+            if _dec_answer:
+                _dec_resp = self._grounded_brain63_response("Brain63", _dec_answer)
+            else:
+                _dec_resp = self._simple_response(
+                    "Brain63",
+                    f"I have no notes or decision records about '{_dec_entity}' in Brain63. "
+                    "I cannot report decisions that aren't recorded in my knowledge base.",
+                )
+            _persist(_dec_resp.answer)
+            return _stamp(_dec_resp)
 
         # ── Approval commands (Phase 17A — EARLIEST) ────────────────────────
         _apr_resp = await self._handle_approval_command(_raw_q, request)
@@ -639,6 +830,8 @@ class ConversationService:
             )
             _persist(answer)
             elapsed = (time.perf_counter() - started) * 1000
+            # Attach Brain63 sources when knowledge context was fetched for the LLM.
+            _social_b63_sources = self._brain63_sources_for_query(_raw_q)
             return AssistantResponse(
                 mode="conversation",
                 title="Conversation",
@@ -646,7 +839,7 @@ class ConversationService:
                 confidence=0.72,
                 reasoning=f"Social conversation — goal: {_social_goal}.",
                 processing_time_ms=elapsed,
-                sources=[],
+                sources=_social_b63_sources,
                 agents=[AgentStatus(
                     name="Conversation Core",
                     role="direct_assistant",
@@ -735,6 +928,10 @@ class ConversationService:
                 _raw_q, history, voice=bool(request.metadata.get("voice")),
                 goal=None,
             )
+            # Attach Brain63 sources when knowledge context was fetched for the LLM.
+            _b63_llm_sources = self._brain63_sources_for_query(_raw_q)
+            if _b63_llm_sources:
+                sources = _b63_llm_sources
 
         _persist(answer)
         elapsed = (time.perf_counter() - started) * 1000
@@ -3175,8 +3372,8 @@ class ConversationService:
         key = f"correction_{re.sub(r'[^a-z0-9]', '_', entity.lower())}"
         return self.memory_service.recall(key)
 
-    def _brain63_entity_answer(self, entity: str, query_type: str) -> str | None:
-        """Query Brain63 for entity content. Returns formatted answer string or None."""
+    def _brain63_entity_answer(self, entity: str, query_type: str):
+        """Query Brain63 for entity content. Returns Brain63Answer or None."""
         if not self.brain63_service:
             return None
         try:
@@ -3186,16 +3383,13 @@ class ConversationService:
             if not chunks:
                 return None
             if query_type == "status":
-                result = self.brain63_service.answer_status(entity, chunks)
+                return self.brain63_service.answer_status(entity, chunks)
             elif query_type == "overview":
-                result = self.brain63_service.answer_overview(entity, chunks)
+                return self.brain63_service.answer_overview(entity, chunks)
             elif query_type == "decisions":
-                result = self.brain63_service.answer_decisions(entity, chunks)
-            elif query_type in ("roadmap", "vision"):
-                result = self.brain63_service.answer_general(entity, chunks)
+                return self.brain63_service.answer_decisions(entity, chunks)
             else:
-                result = self.brain63_service.answer_general(entity, chunks)
-            return result.text if result else None
+                return self.brain63_service.answer_general(entity, chunks)
         except Exception as exc:
             logger.warning("Brain63 lookup failed for entity=%r: %s", entity, exc)
             return None
@@ -3379,9 +3573,9 @@ class ConversationService:
         m = _DECISION_QUERY_RE.search(raw)
         if m:
             entity = _first_group(m) or ""
-            b63 = self._brain63_entity_answer(entity, "decisions")
-            if b63:
-                return self._simple_response("Brain63", b63)
+            b63_answer = self._brain63_entity_answer(entity, "decisions")
+            if b63_answer:
+                return self._grounded_brain63_response("Brain63", b63_answer)
             return self._simple_response(
                 "Brain63",
                 f"No decision records found in Brain63 for '{entity}'.",
@@ -3391,9 +3585,9 @@ class ConversationService:
         m = _ROADMAP_QUERY_RE.search(raw)
         if m:
             entity = _first_group(m) or ""
-            b63 = self._brain63_entity_answer(entity, "roadmap")
-            if b63:
-                return self._simple_response("Brain63", b63)
+            b63_answer = self._brain63_entity_answer(entity, "roadmap")
+            if b63_answer:
+                return self._grounded_brain63_response("Brain63", b63_answer)
             return None  # Let LLM path handle if Brain63 has nothing
 
         # Project status/progress — Brain63 primary, registry fallback
@@ -3404,9 +3598,9 @@ class ConversationService:
                 correction = self._get_entity_correction(entity)
                 if correction:
                     return self._simple_response("Project Status", f"{entity}: {correction}")
-                b63 = self._brain63_entity_answer(entity, "status")
-                if b63:
-                    return self._simple_response("Brain63", b63)
+                b63_answer = self._brain63_entity_answer(entity, "status")
+                if b63_answer:
+                    return self._grounded_brain63_response("Brain63", b63_answer)
                 answer = describe_project(entity, None)
                 return self._simple_response("Project Registry", answer)
 
@@ -3418,9 +3612,9 @@ class ConversationService:
                 correction = self._get_entity_correction(entity)
                 if correction:
                     return self._simple_response("Entity Info", f"{entity}: {correction}")
-                b63 = self._brain63_entity_answer(entity, "overview")
-                if b63:
-                    return self._simple_response("Brain63", b63)
+                b63_answer = self._brain63_entity_answer(entity, "overview")
+                if b63_answer:
+                    return self._grounded_brain63_response("Brain63", b63_answer)
                 # Static registry fallback
                 if get_device(entity.lower()):
                     answer = describe_device(entity, None)
@@ -4313,6 +4507,209 @@ class ConversationService:
         raw = strip_wake_prefix(request.query.strip())
         lowered = raw.lower()
 
+        # Last voice follow-up decision (debug)
+        if _VOICE_DECISION_RE.search(lowered):
+            d = _LAST_VOICE_DECISION
+            if not d:
+                return self._simple_response(
+                    "Last Voice Decision",
+                    "No voice decision recorded yet. Speak to SILVIA (a voice turn), then ask again.",
+                )
+            body = "\n".join([
+                f"**Response:** \"{d.get('response', '')}\"",
+                f"**expects_reply:** {str(d.get('expects_reply', False)).lower()}",
+                f"**followup_reason:** {d.get('followup_reason', 'none')}",
+                f"**next_state:** {d.get('next_state', 'WAKE_LISTENING')}",
+                f"**why:** {d.get('why', '')}",
+                f"**at:** {d.get('ts', '')}",
+            ])
+            return self._simple_response("Last Voice Decision", body)
+
+        # Chat / LLM latency report — phase breakdown of recent replies
+        if _CHAT_LATENCY_RE.search(lowered):
+            if not _LLM_TIMINGS:
+                return self._simple_response(
+                    "Chat Latency",
+                    "No chat replies measured yet. Ask SILVIA a question, then run this again.\n\n"
+                    "Phases tracked: **ttft** (time to first token — the 'thinking' delay), "
+                    "**ctx** (context build, incl. **mem** = embedding search), "
+                    "**gen** (generation), **tok/s** (throughput).",
+                )
+            recent = list(_LLM_TIMINGS)[-8:]
+            n = len(recent)
+            avg = lambda k: sum(r[k] for r in recent) / n
+            lines = [
+                f"**Model:** {recent[-1]['model']}   (last {n} replies)",
+                f"**Avg time-to-first-token:** {avg('ttft_ms'):.0f} ms  ← the 'understanding' delay you feel",
+                f"**Avg context build:** {avg('ctx_ms'):.0f} ms  (embedding/memory search: {avg('mem_ms'):.0f} ms, "
+                f"brain63: {avg('brain63_ms'):.0f} ms, nodes: {avg('node_ms'):.0f} ms)",
+                f"**Avg generation:** {avg('gen_ms'):.0f} ms  @ {avg('tok_s'):.1f} tok/s",
+                f"**Avg prompt size:** {avg('prompt_chars'):.0f} chars",
+                "",
+                "Recent replies (newest first):",
+            ]
+            for r in reversed(recent):
+                lines.append(
+                    f"  `{r['ts']}` ttft={r['ttft_ms']}ms ctx={r['ctx_ms']}ms "
+                    f"(mem={r['mem_ms']}) gen={r['gen_ms']}ms {r['tok_s']}tok/s "
+                    f"[{r['goal']}] — {r['query']!r}"
+                )
+            # Inline guidance based on what dominates
+            a_ttft, a_mem, a_gen, a_toks = avg("ttft_ms"), avg("mem_ms"), avg("gen_ms"), avg("tok_s")
+            lines.append("")
+            if a_mem > 400:
+                lines.append("⚠️ Embedding/memory search is a big share of the delay — the embed model may be reloading. The keep-alive fix should reduce this after a few queries.")
+            if a_ttft - a_mem > 1500:
+                lines.append("⚠️ High time-to-first-token beyond memory search points to a model reload (VRAM swap) or large prompt — likely a GPU-memory constraint.")
+            if a_toks and a_toks < 12:
+                lines.append("⚠️ Low tokens/sec suggests CPU inference (no GPU). A smaller model would be the main lever.")
+            elif a_toks >= 25:
+                lines.append("✅ Healthy tokens/sec — generation is GPU-fast; latency is mostly pre-token (context/first-token).")
+            return self._simple_response("Chat Latency", "\n".join(lines))
+
+        # Voice latency report
+        if _VOICE_LATENCY_RE.search(lowered):
+            from backend.app.voice.pipeline_fast import get_latency_logger
+            lat = get_latency_logger()
+            text = lat.summary_text(10)
+            return self._simple_response("Voice Pipeline Latency", text)
+
+        # Voice mode report
+        if _VOICE_MODE_RE.search(lowered):
+            from backend.config import (
+                VOICE_MODE, VOICE_SUPPORTED_MODES, VOICE_AUTO_TTS, VOICE_FOLLOWUP_ENABLED,
+            )
+            presence = VOICE_MODE == "presence_experimental"
+            lines = [
+                f"**Current voice mode:** {VOICE_MODE}",
+                f"**Supported modes:** {', '.join(VOICE_SUPPORTED_MODES)}",
+                f"**Auto TTS enabled:** {str(VOICE_AUTO_TTS and presence).lower()}",
+                f"**Follow-up listening:** {str(VOICE_FOLLOWUP_ENABLED and presence).lower()}",
+                f"**Presence (conversational) mode:** {'enabled' if presence else 'disabled'}",
+                "",
+                "Stable flow: wake word → record one utterance → transcribe → send to chat "
+                "as text. No automatic speech — use the play/replay button to hear a response.",
+            ]
+            return self._simple_response("Voice Mode", "\n".join(lines))
+
+        # Voice diagnostics — overall pipeline health for the stable STT-only path
+        if _VOICE_DIAG_RE.search(lowered):
+            from backend.config import (
+                VOICE_MODE, STT_PROVIDER, TTS_PROVIDER, VOICE_AUTO_TTS,
+                VOICE_FOLLOWUP_ENABLED,
+            )
+            from backend.app.api.voice import _tts_diag, _inject_queues
+            presence = VOICE_MODE == "presence_experimental"
+            try:
+                from backend.voice.wakeword.detector import get_detector
+                wd = get_detector().diagnostics()
+                wake_status = (
+                    f"model_loaded={wd['model_loaded']} chunks={wd['chunks_processed']} "
+                    f"last_conf={wd['last_confidence']:.3f}"
+                )
+            except Exception as exc:
+                wake_status = f"unavailable ({exc})"
+            tts_queue = _tts_diag.get("queueSize", 0) if _tts_diag else 0
+            tts_playing = bool(_tts_diag.get("currentlyPlaying", False)) if _tts_diag else False
+            lines = [
+                f"**Voice mode:** {VOICE_MODE}",
+                f"**Wake listener:** {len(_inject_queues)} active connection(s) — {wake_status}",
+                f"**STT provider:** {STT_PROVIDER}",
+                f"**TTS provider:** {TTS_PROVIDER} (manual replay only)",
+                f"**TTS auto enabled:** {str(VOICE_AUTO_TTS and presence).lower()}",
+                f"**TTS queue size:** {tts_queue}",
+                f"**Pending playback:** {str(tts_playing).lower()}",
+                f"**Follow-up enabled:** {str(VOICE_FOLLOWUP_ENABLED and presence).lower()}",
+                f"**Presence mode:** {'enabled' if presence else 'disabled'}",
+            ]
+            return self._simple_response("Voice Diagnostics", "\n".join(lines))
+
+        # TTS diagnostics (pushed from browser after each turn)
+        if _TTS_DIAG_RE.search(lowered):
+            from backend.app.api.voice import _tts_diag
+            from backend.config import TTS_PROVIDER, SPEACHES_TTS_MODEL, SPEACHES_TTS_VOICE, SPEACHES_BASE_URL
+            if not _tts_diag:
+                body = (
+                    "No TTS diagnostics received yet. Ask SILVIA a voice question first, "
+                    "then run this command.\n\n"
+                    f"**Provider:** {TTS_PROVIDER} ({SPEACHES_BASE_URL})\n"
+                    f"**Model:** {SPEACHES_TTS_MODEL}\n"
+                    f"**Voice:** {SPEACHES_TTS_VOICE}"
+                )
+                return self._simple_response("TTS Diagnostics", body)
+
+            d = _tts_diag
+            lines = [
+                f"**Provider:** {d.get('provider', TTS_PROVIDER)} — {SPEACHES_BASE_URL}",
+                f"**Model:** {SPEACHES_TTS_MODEL}  Voice: {SPEACHES_TTS_VOICE}",
+                f"**Active turn:** {d.get('activeTurnId') or 'none'}",
+                f"**Currently playing:** {d.get('currentlyPlaying', False)}",
+                f"**Queue size:** {d.get('queueSize', 0)}  Pending chunks: {d.get('pendingChunks', 0)}",
+                f"**Total turns:** {d.get('totalTurns', 0)}  Total chunks sent: {d.get('totalChunksSent', 0)}",
+                f"**History rejections:** {d.get('historyRejections', 0)}",
+                f"**Cancelled turns (last 5):** {', '.join(d.get('cancelledTurns', [])) or 'none'}",
+                f"**Last text sent:** {d.get('lastTextSentToTts') or 'none'}",
+                f"**Last error:** {d.get('lastTtsError') or 'none'}",
+            ]
+            return self._simple_response("TTS Diagnostics", "\n".join(lines))
+
+        # Wake word diagnostics
+        if _WAKE_DIAG_RE.search(lowered):
+            from backend.config import (
+                VOICE_MODE, WAKE_WORD_THRESHOLD, WAKE_WORD_COOLDOWN_SECONDS,
+                WAKE_BYPASS_COOLDOWN_CONFIDENCE, WAKE_CONFIRMATION_ENABLED,
+                WAKE_MIN_COMMAND_WORDS,
+            )
+            cooldown_label = f"{WAKE_WORD_COOLDOWN_SECONDS}s" if WAKE_WORD_COOLDOWN_SECONDS > 0 else "disabled (0)"
+            lines = [
+                f"**VOICE_MODE:** {VOICE_MODE}",
+                f"**Wake word enabled:** true",
+                f"**Threshold:** {WAKE_WORD_THRESHOLD}",
+                f"**Cooldown:** {cooldown_label} (bypassed if confidence ≥ {WAKE_BYPASS_COOLDOWN_CONFIDENCE})",
+                f"**Confirmation required:** {WAKE_CONFIRMATION_ENABLED}",
+                f"**Min command words:** {WAKE_MIN_COMMAND_WORDS}",
+            ]
+            try:
+                from backend.voice.wakeword.detector import get_detector
+                d = get_detector().diagnostics()
+                lines += [
+                    "",
+                    f"**Model:** {d['model']} (loaded: {d['model_loaded']})",
+                    f"**Chunks processed:** {d['chunks_processed']}",
+                    f"**Last confidence:** {d['last_confidence']:.3f} (raw: {d['last_raw_confidence']:.3f})",
+                    f"**Last audio level (RMS):** {d['last_audio_level']:.5f}",
+                    f"**Cooldown active:** {d['in_cooldown']} (remaining: {d['cooldown_remaining_s']}s)",
+                    f"**Total accepted:** {d['total_accepted_triggers']} | cooldown bypassed: {d.get('cooldown_bypassed', 0)}",
+                    f"**Rejected — below threshold:** {d['rejected_below_threshold']}",
+                    f"**Rejected — cooldown:** {d['rejected_cooldown']}",
+                    f"**Last state:** {d['last_state_transition']}",
+                    f"**Last error:** {d['last_error'] or 'none'}",
+                ]
+                if not d["model_loaded"]:
+                    lines.append("\n⚠️ **Model failed to load.** Check hey_silvia.onnx and openwakeword install.")
+                elif d["chunks_processed"] == 0:
+                    lines.append("\n⚠️ **No audio received.** Wake WebSocket may not be connected — check browser mic permission and voice toggle.")
+                elif d["last_audio_level"] < 0.001:
+                    lines.append("\n⚠️ **Very low audio level.** Mic may be muted or wrong device selected.")
+                elif d["in_cooldown"]:
+                    lines.append(f"\n⚠️ **Cooldown active** ({d['cooldown_remaining_s']:.1f}s left). Say 'reset wake cooldown' to clear it.")
+                elif d["last_confidence"] > 0 and d["last_confidence"] < d["threshold"]:
+                    lines.append(f"\n⚠️ **Confidence below threshold.** Speak louder or closer. Current: {d['last_confidence']:.3f} / need: {d['threshold']:.2f}.")
+                else:
+                    lines.append("\n✅ Wake word detector looks healthy. Say 'Hey Silvia' clearly.")
+            except Exception as exc:
+                lines.append(f"\n⚠️ Wake word detector not initialized: {exc}")
+            return self._simple_response("Wake Word Diagnostics", "\n".join(lines))
+
+        # Reset wake cooldown
+        if _WAKE_RESET_RE.search(lowered):
+            try:
+                from backend.voice.wakeword.detector import get_detector
+                get_detector().reset_cooldown()
+                return self._simple_response("Wake Cooldown Reset", "Wake word cooldown cleared. SILVIA is ready to detect 'Hey Silvia' again.")
+            except Exception as exc:
+                return self._simple_response("Wake Reset Failed", f"Could not reset cooldown: {exc}")
+
         # Pending email send confirmation (Phase 12G)
         if self._pending_email:
             pending = self._pending_email
@@ -4551,12 +4948,7 @@ class ConversationService:
 
         # ── Projects — deterministic to prevent LLM from inventing project names ──
         if _MY_PROJECTS_RE.search(raw):
-            from backend.app.services.project_registry import list_projects
-            answer = (
-                f"Known projects: {list_projects()}. "
-                "Say the project name for details, or 'show tasks' to see what's queued."
-            )
-            return self._simple_response("Projects", answer)
+            return self._projects_from_brain63_or_registry(raw)
 
         # ── Entity registry (device/project) — safety net ─────────────────────
         _corr = self._handle_user_correction(raw)
@@ -7041,6 +7433,120 @@ class ConversationService:
             payload={"speech_text": sanitize_for_speech(answer)},
         )
 
+    def _grounded_brain63_response(self, title: str, answer) -> AssistantResponse:
+        """Build AssistantResponse with Brain63 source paths in the sources field."""
+        from backend.app.models.assistant import SourceReference
+        sources = [
+            SourceReference(
+                title=p.split("/")[-1].replace(".md", "").replace("_", " "),
+                url=f"obsidian://{p}",
+                source="Brain63",
+                category="knowledge",
+            )
+            for p in (answer.sources or [])
+        ]
+        confidence = {"high": 0.9, "medium": 0.75, "low": 0.5}.get(
+            getattr(answer, "confidence", "medium"), 0.75
+        )
+        return AssistantResponse(
+            mode="conversation",
+            title=title,
+            answer=answer.text,
+            confidence=confidence,
+            reasoning="Retrieved from Brain63 (Obsidian vault).",
+            processing_time_ms=0,
+            sources=sources,
+            logs=[CommandLogEntry(
+                timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                title=title,
+                detail=answer.text[:200],
+            )],
+            payload={"speech_text": sanitize_for_speech(answer.text)},
+        )
+
+    def _projects_from_brain63_or_registry(self, query: str, category: str = "") -> AssistantResponse:
+        """Return a grounded project listing from Brain63 if available, else static registry."""
+        from backend.app.services.project_registry import list_projects
+        from backend.app.models.assistant import SourceReference
+        if self.brain63_service:
+            try:
+                search_q = f"{category} projects overview" if category else "projects overview status"
+                chunks = self.brain63_service.search(search_q, top_k=8)
+                if chunks:
+                    seen_paths: list = []
+                    sources: list = []
+                    lines: list = []
+                    for c in chunks[:6]:
+                        if c.file_path not in seen_paths:
+                            seen_paths.append(c.file_path)
+                            sources.append(SourceReference(
+                                title=c.file_path.split("/")[-1].replace(".md", "").replace("_", " "),
+                                url=f"obsidian://{c.file_path}",
+                                source="Brain63",
+                                category="knowledge",
+                            ))
+                        from backend.app.services.brain63_service import _first_sentence_or_line
+                        first = _first_sentence_or_line(c.content)
+                        if first and first not in lines:
+                            lines.append(f"**{c.project}** [{c.file_path.split('/')[-1]}]: {first[:180]}")
+                    if lines:
+                        intro = f"From Brain63 ({category + ' ' if category else ''}projects):"
+                        answer = intro + "\n\n" + "\n".join(lines[:6])
+                        return AssistantResponse(
+                            mode="conversation",
+                            title="Brain63",
+                            answer=answer,
+                            confidence=0.85,
+                            reasoning="Retrieved from Brain63 vault.",
+                            processing_time_ms=0,
+                            sources=sources,
+                            logs=[CommandLogEntry(
+                                timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                title="Brain63",
+                                detail=answer[:200],
+                            )],
+                            payload={"speech_text": sanitize_for_speech(answer)},
+                        )
+            except Exception as exc:
+                logger.debug("Brain63 project search failed: %s", exc)
+        # Fallback to static registry
+        fallback = (
+            f"Known projects: {list_projects()}. "
+            "Say the project name for details, or 'show tasks' to see what's queued."
+        )
+        return self._simple_response("Projects", fallback)
+
+    def _brain63_sources_for_query(self, query: str) -> list:
+        """Return SourceReference list for Brain63 entities mentioned in the query."""
+        if not self.brain63_service:
+            return []
+        from backend.app.models.assistant import SourceReference
+        raw_mentions = {
+            m.group(0).lower().replace(" ", "").replace("-", "")
+            for m in _ENTITY_DETECT_RE.finditer(query)
+        }
+        if not raw_mentions:
+            return []
+        seen: set = set()
+        sources: list = []
+        for entity in sorted(raw_mentions):
+            try:
+                chunks = self.brain63_service.search(
+                    query=entity, entity_hint=entity, top_k=4
+                )
+                for c in chunks:
+                    if c.file_path not in seen:
+                        seen.add(c.file_path)
+                        sources.append(SourceReference(
+                            title=c.file_path.split("/")[-1].replace(".md", "").replace("_", " "),
+                            url=f"obsidian://{c.file_path}",
+                            source="Brain63",
+                            category="knowledge",
+                        ))
+            except Exception:
+                pass
+        return sources[:6]
+
     def _audio_response(self, message: str, state) -> AssistantResponse:
         return AssistantResponse(
             mode="conversation",
@@ -7114,6 +7620,45 @@ class ConversationService:
         except Exception as exc:
             logger.warning("Grounded generation failed: %s", exc)
         return self._fallback_source_summary(query, sources)
+
+    def _has_pending(self) -> bool:
+        """A set pending confirmation means SILVIA is genuinely awaiting the
+        user's reply (yes/no, a choice, etc.) — an intent signal, not punctuation."""
+        return any((
+            self._pending_deletion, self._pending_ssh, self._pending_command,
+            self._pending_email, self._pending_gcal_delete, self._pending_suggestion,
+        ))
+
+    def _pending_reason(self) -> str:
+        """Map a set pending confirmation to a follow-up reason."""
+        if self._pending_command:
+            return "approval"
+        if self._pending_suggestion:
+            return "approval"
+        if self._pending_email or self._pending_gcal_delete or self._pending_deletion or self._pending_ssh:
+            return "confirmation"
+        return "confirmation"
+
+    def _decide_followup(self, text: str, voice: bool) -> tuple[bool, str]:
+        """Deterministically decide expects_reply + reason for a response, and (for
+        voice turns) record the decision for 'show last voice decision'."""
+        has_pending = self._has_pending()
+        expects, reason = should_enter_followup(text or "", has_pending, self._pending_reason())
+        if voice:
+            global _LAST_VOICE_DECISION
+            _LAST_VOICE_DECISION = {
+                "ts": time.strftime("%H:%M:%S", time.localtime()),
+                "response": (text or "").strip()[:300],
+                "expects_reply": expects,
+                "followup_reason": reason,
+                "next_state": "WAITING_FOR_REPLY" if expects else "WAKE_LISTENING",
+                "why": _followup_explanation(text or "", expects, reason, has_pending),
+            }
+            logger.info(
+                "[VOICE_DECISION] expects_reply=%s reason=%s next=%s | %r",
+                expects, reason, _LAST_VOICE_DECISION["next_state"], (text or "")[:80],
+            )
+        return expects, reason
 
     async def _enrich_with_memory(self, query: str) -> str:
         """Return a memory context block to prepend to the system prompt, or ''."""
@@ -7280,8 +7825,14 @@ class ConversationService:
     async def _generate_response_stream(
         self, query: str, history: list[dict], voice: bool = False, goal: str | None = None
     ):
+        _t_ctx0 = time.perf_counter()
+        _t = time.perf_counter()
         brain63_ctx = self._brain63_context_block(query)
+        _brain63_ms = (time.perf_counter() - _t) * 1000
+        _t = time.perf_counter()
         node_ctx = self._node_context_block(query)
+        _node_ms = (time.perf_counter() - _t) * 1000
+        _mem_ms = 0.0
         if goal in self._CONV_GOALS:
             # Conversational path — same split as _generate_response.
             threads = (
@@ -7299,7 +7850,9 @@ class ConversationService:
             )
         else:
             # Operational path.
+            _t = time.perf_counter()
             memory_ctx = await self._enrich_with_memory(query)
+            _mem_ms = (time.perf_counter() - _t) * 1000
             system_content = build_system_prompt(
                 query, voice=voice, goal=goal,
                 threads=self.state.render_block(),
@@ -7314,15 +7867,19 @@ class ConversationService:
             messages = [{"role": "system", "content": system_content}]
             messages.extend(history)
             messages.append({"role": "user", "content": query})
+        _ctx_ms = (time.perf_counter() - _t_ctx0) * 1000
+        _prompt_chars = sum(len(m.get("content", "")) for m in messages)
         payload = {
             "model": self.model_name,
             "messages": messages,
             "stream": True,
             "keep_alive": KEEP_ALIVE,
-            "options": {"num_predict": 400, "temperature": 0.7, "num_ctx": 4096},
+            "options": {"num_predict": 60 if voice else 400, "temperature": 0.7, "num_ctx": 4096},
         }
         chunk_count = 0
         full_text = []
+        _t_llm = time.perf_counter()
+        _ttft_ms = None
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 async with client.stream("POST", OLLAMA_CHAT_URL, json=payload) as response:
@@ -7335,6 +7892,8 @@ class ConversationService:
                             data = json.loads(line)
                             token = data.get("message", {}).get("content", "")
                             if token:
+                                if _ttft_ms is None:
+                                    _ttft_ms = (time.perf_counter() - _t_llm) * 1000
                                 chunk_count += 1
                                 full_text.append(token)
                                 yield token
@@ -7344,9 +7903,24 @@ class ConversationService:
                         except json.JSONDecodeError:
                             continue
             text = "".join(full_text)
+            _gen_ms = (time.perf_counter() - _t_llm) * 1000
+            _tok_s = (chunk_count / (_gen_ms / 1000)) if _gen_ms > 0 else 0.0
+            _ttft = _ttft_ms if _ttft_ms is not None else _gen_ms
+            _rec = {
+                "ts": time.strftime("%H:%M:%S", time.localtime()),
+                "model": self.model_name, "goal": goal or "operational", "voice": voice,
+                "ctx_ms": round(_ctx_ms), "brain63_ms": round(_brain63_ms),
+                "node_ms": round(_node_ms), "mem_ms": round(_mem_ms),
+                "ttft_ms": round(_ttft), "gen_ms": round(_gen_ms),
+                "tokens": chunk_count, "tok_s": round(_tok_s, 1),
+                "prompt_chars": _prompt_chars, "query": query[:60],
+            }
+            _LLM_TIMINGS.append(_rec)
             logger.info(
-                "LLM stream: chunks=%d len=%d done_reason=%s goal=%s query=%r",
-                chunk_count, len(text), done_reason, goal, query[:80],
+                "[LLM_TIMING] ttft_ms=%d ctx_ms=%d (mem=%d brain63=%d node=%d) gen_ms=%d "
+                "tokens=%d tok_s=%.1f prompt_chars=%d model=%s goal=%s",
+                round(_ttft), round(_ctx_ms), round(_mem_ms), round(_brain63_ms), round(_node_ms),
+                round(_gen_ms), chunk_count, _tok_s, _prompt_chars, self.model_name, goal or "operational",
             )
             if done_reason == "length" and text and text[-1] not in ".!?)\"'":
                 yield "."
@@ -7363,6 +7937,7 @@ class ConversationService:
           {"type": "done", "speech_text": "...", ...} — stream complete
         """
         started = time.perf_counter()
+        _voice = bool(request.metadata.get("voice"))
 
         memory_response = self._handle_memory_command(request)
         if memory_response is not None:
@@ -7403,6 +7978,7 @@ class ConversationService:
             if _ssh_resp is not None:
                 self._persist_turn(request, _ssh_resp.answer)
                 _ssh_resp.processing_time_ms = (time.perf_counter() - started) * 1000
+                _ssh_resp.expects_reply, _ssh_resp.followup_reason = self._decide_followup(_ssh_resp.answer, _voice)
                 yield json.dumps({"type": "full", "response": _ssh_resp.model_dump()})
                 return
         # ──────────────────────────────────────────────────────────────────
@@ -7448,6 +8024,7 @@ class ConversationService:
             if _mc_resp is not None:
                 self._persist_turn(request, _mc_resp.answer)
                 _mc_resp.processing_time_ms = (time.perf_counter() - started) * 1000
+                _mc_resp.expects_reply, _mc_resp.followup_reason = self._decide_followup(_mc_resp.answer, _voice)
                 yield json.dumps({"type": "full", "response": _mc_resp.model_dump()})
                 return
         # ──────────────────────────────────────────────────────────────────────
@@ -7488,10 +8065,13 @@ class ConversationService:
                 _full_text = "The local model is unavailable — check that Ollama is running."
             self._persist_turn(request, _full_text)
             _elapsed = (time.perf_counter() - started) * 1000
+            _expects, _fu_reason = self._decide_followup(_full_text, _voice)
             yield json.dumps({
                 "type": "done",
                 "speech_text": sanitize_for_speech(_full_text),
                 "processing_time_ms": _elapsed,
+                "expects_reply": _expects,
+                "followup_reason": _fu_reason,
                 "agents": [{"name": "Conversation Core", "role": "direct_assistant",
                             "state": "active", "confidence": 72,
                             "summary": f"Social ({_social_goal}) streamed."}],
@@ -7507,6 +8087,7 @@ class ConversationService:
         if command_response is not None:
             self._persist_turn(request, command_response.answer)
             command_response.processing_time_ms = (time.perf_counter() - started) * 1000
+            command_response.expects_reply, command_response.followup_reason = self._decide_followup(command_response.answer, _voice)
             yield json.dumps({"type": "full", "response": command_response.model_dump()})
             return
 
@@ -7519,6 +8100,7 @@ class ConversationService:
                 if exec_response is not None:
                     self._persist_turn(request, exec_response.answer)
                     exec_response.processing_time_ms = (time.perf_counter() - started) * 1000
+                    exec_response.expects_reply, exec_response.followup_reason = self._decide_followup(exec_response.answer, _voice)
                     yield json.dumps({"type": "full", "response": exec_response.model_dump()})
                     return
 
@@ -7537,6 +8119,7 @@ class ConversationService:
             if tool_response is not None:
                 self._persist_turn(request, tool_response.answer)
                 tool_response.processing_time_ms = (time.perf_counter() - started) * 1000
+                tool_response.expects_reply, tool_response.followup_reason = self._decide_followup(tool_response.answer, _voice)
                 yield json.dumps({"type": "full", "response": tool_response.model_dump()})
                 return
             logger.warning("[ROUTE] plan selected tool but _execute_plan returned None — falling through to LLM")
@@ -7591,10 +8174,13 @@ class ConversationService:
 
         self._persist_turn(request, full_text)
         elapsed = (time.perf_counter() - started) * 1000
+        expects, fu_reason = self._decide_followup(full_text, _voice)
         yield json.dumps({
             "type": "done",
             "speech_text": sanitize_for_speech(full_text),
             "processing_time_ms": elapsed,
+            "expects_reply": expects,
+            "followup_reason": fu_reason,
             "agents": [{"name": "Conversation Core", "role": "direct_assistant", "state": "active", "confidence": 72, "summary": "Handled through the streaming conversation path."}],
             "logs": [{"timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "title": "Conversation", "detail": f"Streamed with {len(history) // 2} prior turns in {elapsed:.0f}ms."}],
         })

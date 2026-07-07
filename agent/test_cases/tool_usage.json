@@ -1,0 +1,44 @@
+[
+  {
+    "id": "tu-001",
+    "category": "tool_usage",
+    "question": "What time is it?",
+    "must_include_any": [":", "AM", "PM", "o'clock"],
+    "expected_behavior": "Deterministic time answer containing an actual clock time — must not be a vague or hallucinated reply.",
+    "failure_type": "tool_mismatch"
+  },
+  {
+    "id": "tu-002",
+    "category": "tool_usage",
+    "question": "Show chat latency",
+    "must_include_any": ["latency", "ms", "second", "ttft", "measured"],
+    "expected_behavior": "The 'show chat latency' diagnostic command returns real timing data, not a conversational deflection.",
+    "failure_type": "tool_mismatch"
+  },
+  {
+    "id": "tu-003",
+    "category": "tool_usage",
+    "question": "What hardware projects do I have?",
+    "expected_tools_any": ["hardware", "project"],
+    "must_not_invent": true,
+    "expected_behavior": "Must route to the deterministic hardware/project registry tools instead of free-form LLM generation.",
+    "failure_type": "tool_mismatch"
+  },
+  {
+    "id": "tu-004",
+    "category": "tool_usage",
+    "question": "What's in my hardware inventory?",
+    "expected_tools_any": ["inventory", "hardware"],
+    "must_not_invent": true,
+    "expected_behavior": "Must query the hw_inventory registry via a tool call; inventory contents must never be invented.",
+    "failure_type": "tool_mismatch"
+  },
+  {
+    "id": "tu-005",
+    "category": "tool_usage",
+    "question": "Open the knowledge board.",
+    "must_include_any": ["knowledge", "board", "open"],
+    "expected_behavior": "Board-router command should acknowledge opening the knowledge board (deterministic internal navigation), not chat about knowledge in general.",
+    "failure_type": "tool_mismatch"
+  }
+]

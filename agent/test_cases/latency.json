@@ -1,0 +1,34 @@
+[
+  {
+    "id": "lat-001",
+    "category": "latency",
+    "question": "Hello, are you online?",
+    "max_text_latency_seconds": 5,
+    "expected_behavior": "Trivial greeting must answer within 5 seconds wall-clock.",
+    "failure_type": "text_latency"
+  },
+  {
+    "id": "lat-002",
+    "category": "latency",
+    "question": "What time is it?",
+    "max_text_latency_seconds": 5,
+    "expected_behavior": "Deterministic time query must be near-instant (fast-path, no LLM round-trip needed).",
+    "failure_type": "text_latency"
+  },
+  {
+    "id": "lat-003",
+    "category": "latency",
+    "question": "Give me a quick update on Silvia.",
+    "max_text_latency_seconds": 10,
+    "expected_behavior": "A grounded project update must complete within 10 seconds including retrieval.",
+    "failure_type": "text_latency"
+  },
+  {
+    "id": "lat-004",
+    "category": "latency",
+    "question": "What are my current main projects?",
+    "max_text_latency_seconds": 12,
+    "expected_behavior": "Project listing with retrieval must complete within 12 seconds.",
+    "failure_type": "text_latency"
+  }
+]

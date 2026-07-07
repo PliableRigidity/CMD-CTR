@@ -65,6 +65,15 @@ _QUICK_SOCIAL: list[tuple[re.Pattern, list[str]]] = [
             "Good. Nothing exploded today.",
         ],
     ),
+    # "are you online?" / "hello, are you online?" / "are you there?"
+    # Fast reply for status pings that don't need LLM inference.
+    (
+        re.compile(
+            r"^(?:(?:hello|hi)[,\s]+)?are\s+you\s+(?:online|there|up|running|alive|active)\s*[?!.]*\s*$",
+            re.I,
+        ),
+        ["Online and ready.", "Yes, I'm here.", "Up and running.", "Online."],
+    ),
     # Physical threats / aggressive teasing directed at SILVIA.
     # Pattern is NOT anchored so it matches regardless of trailing context
     # ("im gonna hit you for that" is still teasing).

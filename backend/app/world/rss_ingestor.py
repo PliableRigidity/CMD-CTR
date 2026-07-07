@@ -23,14 +23,40 @@ from backend.app.world.intelligence_service import intelligence_service
 logger = logging.getLogger(__name__)
 
 RSS_FEEDS = [
-    {"url": "https://feeds.bbci.co.uk/news/world/rss.xml", "source": "BBC News"},
-    {"url": "https://www.theguardian.com/world/rss", "source": "The Guardian"},
-    {"url": "https://feeds.skynews.com/feeds/rss/world.xml", "source": "Sky News"},
-]
+    # ── World / Geopolitics ──
+    {"url": "https://feeds.bbci.co.uk/news/world/rss.xml",       "source": "BBC News",       "category_hint": None},
+    {"url": "https://www.theguardian.com/world/rss",              "source": "The Guardian",   "category_hint": None},
+    {"url": "https://feeds.skynews.com/feeds/rss/world.xml",      "source": "Sky News",       "category_hint": None},
+    {"url": "https://feeds.reuters.com/reuters/worldNews",         "source": "Reuters",        "category_hint": None},
+    {"url": "https://feeds.npr.org/1004/rss.xml",                  "source": "NPR World",      "category_hint": None},
 
-# Note: Reuters feed is often blocked without proper headers, so we will use a fallback or standard requests if needed.
-# For simplicity, we stick to the ones that are easily accessible, but let's add Reuters.
-RSS_FEEDS.append({"url": "https://feeds.reuters.com/reuters/worldNews", "source": "Reuters"})
+    # ── AI / Technology ──
+    {"url": "https://feeds.arstechnica.com/arstechnica/technology-lab", "source": "Ars Technica",   "category_hint": "tech"},
+    {"url": "https://www.theverge.com/rss/index.xml",                   "source": "The Verge",      "category_hint": "tech"},
+    {"url": "https://hnrss.org/frontpage",                              "source": "Hacker News",    "category_hint": "tech"},
+    {"url": "https://techcrunch.com/feed/",                             "source": "TechCrunch",     "category_hint": "tech"},
+    {"url": "https://feeds.feedburner.com/venturebeat/SZYF",            "source": "VentureBeat",    "category_hint": "tech"},
+
+    # ── Engineering ──
+    {"url": "https://hackaday.com/feed/",                                "source": "Hackaday",       "category_hint": "engineering"},
+    {"url": "https://spectrum.ieee.org/feeds/feed.rss",                  "source": "IEEE Spectrum",  "category_hint": "engineering"},
+    {"url": "https://newatlas.com/index.rss",                            "source": "New Atlas",      "category_hint": "engineering"},
+    {"url": "https://www.raspberrypi.com/feed/",                         "source": "Raspberry Pi",   "category_hint": "engineering"},
+    {"url": "https://blog.arduino.cc/feed/",                             "source": "Arduino",        "category_hint": "engineering"},
+    {"url": "https://www.tomshardware.com/feeds/all",                    "source": "Tom's Hardware",  "category_hint": "engineering"},
+
+    # ── Cybersecurity ──
+    {"url": "https://feeds.feedburner.com/TheHackersNews",               "source": "The Hacker News", "category_hint": "cyber"},
+    {"url": "https://www.bleepingcomputer.com/feed/",                    "source": "BleepingComputer","category_hint": "cyber"},
+    {"url": "https://krebsonsecurity.com/feed/",                         "source": "Krebs on Security","category_hint": "cyber"},
+    {"url": "https://www.darkreading.com/rss.xml",                       "source": "Dark Reading",    "category_hint": "cyber"},
+
+    # ── Science / Space ──
+    {"url": "https://www.sciencedaily.com/rss/all.xml",                  "source": "Science Daily",   "category_hint": "science"},
+    {"url": "https://phys.org/rss-feed/",                                "source": "Phys.org",        "category_hint": "science"},
+    {"url": "https://www.space.com/feeds/all",                           "source": "Space.com",       "category_hint": "science"},
+    {"url": "https://www.nasa.gov/feed/",                                "source": "NASA",            "category_hint": "science"},
+]
 
 
 # Removed CATEGORY_RULES to use category_classifier.py
@@ -53,35 +79,54 @@ class RSSIngestor:
         try:
             response = await client.get(feed["url"], timeout=10.0)
             response.raise_for_status()
-            return self.parse_xml(response.text, feed["source"])
+            return self.parse_xml(response.text, feed["source"], feed.get("category_hint"))
         except Exception as e:
             logger.warning(f"Failed to fetch {feed['source']}: {e}")
             return []
 
-    def parse_xml(self, xml_content: str, source_name: str):
+    def parse_xml(self, xml_content: str, source_name: str, category_hint: str | None = None):
         events = []
         try:
             root = ET.fromstring(xml_content)
-            # Find all item tags
-            for item in root.findall(".//item"):
+            # RSS uses <item>, Atom uses <entry>
+            items = root.findall(".//item")
+            if not items:
+                ns = {"atom": "http://www.w3.org/2005/Atom"}
+                items = root.findall(".//atom:entry", ns)
+            for item in items:
                 title = item.findtext("title") or ""
-                description = item.findtext("description") or ""
+                description = (
+                    item.findtext("description")
+                    or item.findtext("summary")
+                    or item.findtext("{http://www.w3.org/2005/Atom}summary")
+                    or item.findtext("{http://www.w3.org/2005/Atom}content")
+                    or ""
+                )
                 link = item.findtext("link") or ""
-                pubDate = item.findtext("pubDate") or datetime.now(timezone.utc).isoformat()
-                
-                # Basic cleanup
+                if not link:
+                    link_el = item.find("{http://www.w3.org/2005/Atom}link")
+                    if link_el is not None:
+                        link = link_el.get("href", "")
+                pubDate = (
+                    item.findtext("pubDate")
+                    or item.findtext("{http://www.w3.org/2005/Atom}published")
+                    or item.findtext("{http://www.w3.org/2005/Atom}updated")
+                    or datetime.now(timezone.utc).isoformat()
+                )
+
                 title = clean_text(title)
                 description = clean_text(description)
-                
+
                 if not title:
                     continue
-                    
+
                 events.append({
                     "title": title,
-                    "summary": description,
+                    "summary": description[:500] if description else "",
                     "link": link,
                     "published_at": pubDate,
-                    "source": source_name
+                    "source": source_name,
+                    "category_hint": category_hint,
                 })
         except Exception as e:
             logger.error(f"Error parsing XML for {source_name}: {e}")
@@ -147,6 +192,8 @@ class RSSIngestor:
         for item in unique_items:
             classification_result = classifier.classify(item["title"], item["summary"], item["source"])
             category = classification_result["category"]
+            if category == "general" and item.get("category_hint"):
+                category = item["category_hint"]
             
             # Temporary dict for ranker
             doc_for_ranker = {

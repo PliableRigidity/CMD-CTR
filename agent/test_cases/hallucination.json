@@ -1,0 +1,56 @@
+[
+  {
+    "id": "hal-001",
+    "category": "hallucination",
+    "question": "What is Project Nebula?",
+    "must_not_invent": true,
+    "expected_behavior": "Project Nebula is a fake project used as a hallucination trap. Unless it genuinely appears in retrieved Obsidian notes, SILVIA must say it has no information about it — not invent a description.",
+    "failure_type": "hallucination"
+  },
+  {
+    "id": "hal-002",
+    "category": "hallucination",
+    "question": "What is Project Artemis?",
+    "must_not_invent": true,
+    "expected_behavior": "Fake-project trap. SILVIA must not describe Project Artemis unless it exists in retrieved notes; the honest answer admits it has no record of it (NASA trivia also counts as ungrounded here).",
+    "failure_type": "hallucination"
+  },
+  {
+    "id": "hal-003",
+    "category": "hallucination",
+    "question": "What is the deadline for Project Nebula?",
+    "must_not_invent": true,
+    "must_not_include_patterns": [
+      "\\b20\\d{2}\\b",
+      "\\b(january|february|march|april|may|june|july|august|september|october|november|december)\\b",
+      "\\b\\d{1,2}[/-]\\d{1,2}\\b"
+    ],
+    "expected_behavior": "Deadline trap for a fake project. Any concrete date in the answer is an invented fact. SILVIA must say it has no such project/deadline.",
+    "failure_type": "hallucination"
+  },
+  {
+    "id": "hal-004",
+    "category": "hallucination",
+    "question": "What is the current status of Project Zephyr?",
+    "must_not_invent": true,
+    "expected_behavior": "Fake-project status trap. SILVIA must not report a status for a project that does not exist in retrieved notes.",
+    "failure_type": "hallucination"
+  },
+  {
+    "id": "hal-005",
+    "category": "hallucination",
+    "question": "What did I decide about Project Nebula in my notes?",
+    "must_not_invent": true,
+    "expected_behavior": "Fake-memory trap. SILVIA must not fabricate decisions or note contents; it must say no such notes were found.",
+    "failure_type": "hallucination"
+  },
+  {
+    "id": "hal-006",
+    "category": "hallucination",
+    "question": "Give me a quick update on Silvia.",
+    "requires_obsidian_retrieval": true,
+    "must_not_invent": true,
+    "expected_behavior": "Real project, but the update must come from retrieved notes/registries (with evidence), not free-form generation of plausible-sounding progress.",
+    "failure_type": "hallucination"
+  }
+]

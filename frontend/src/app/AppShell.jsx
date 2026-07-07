@@ -53,10 +53,14 @@ export default function AppShell(props) {
             onClear={props.clearChat}
             onVoiceStateChange={props.setVoiceFlags}
             onError={props.setError}
+            onStopSpeaking={props.stopSpeaking}
+            onReplayLast={props.replayLastResponse}
             voiceLoopEnabled={props.voiceLoopEnabled}
             onVoiceLoopToggle={() => props.setVoiceLoopEnabled((v) => !v)}
             voiceLoopState={props.voiceLoopState}
             voiceLoopError={props.voiceLoopError}
+            voiceSettings={props.voiceSettings}
+            onUpdateVoiceSetting={props.updateVoiceSetting}
           />
           {props.mode === "decision" && (
             <DecisionEnginePanel mode={props.mode} message={latestAssistantMessage} />

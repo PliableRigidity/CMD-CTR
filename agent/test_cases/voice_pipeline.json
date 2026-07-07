@@ -1,0 +1,37 @@
+[
+  {
+    "id": "vp-001",
+    "category": "voice_pipeline",
+    "question": "Voice subsystem reports a valid state",
+    "voice_check": "status",
+    "expected_behavior": "GET /api/voice/status returns HTTP 200 with available=true (VoiceStatus model).",
+    "failure_type": "voice_endpoint"
+  },
+  {
+    "id": "vp-002",
+    "category": "voice_pipeline",
+    "question": "TTS synthesizes short text quickly",
+    "voice_check": "synthesize",
+    "tts_text": "Testing SILVIA speech output.",
+    "max_speech_start_seconds": 5,
+    "expected_behavior": "POST /api/voice/synthesize returns real audio bytes for a short sentence within 5 seconds.",
+    "failure_type": "speech_latency"
+  },
+  {
+    "id": "vp-003",
+    "category": "voice_pipeline",
+    "question": "Voice latency metrics endpoint responds",
+    "voice_check": "latency_metrics",
+    "expected_behavior": "GET /api/voice/latency returns HTTP 200 with a metrics payload (turn history / summary).",
+    "failure_type": "voice_endpoint"
+  },
+  {
+    "id": "vp-004",
+    "category": "voice_pipeline",
+    "question": "What time is it?",
+    "max_text_latency_seconds": 5,
+    "max_speech_start_seconds": 10,
+    "expected_behavior": "End-to-end voice turn proxy: text answer within 5s and speech-ready audio (text latency + TTS of the answer) within 10s. Catches 'speech lags long after text appears'.",
+    "failure_type": "speech_latency"
+  }
+]

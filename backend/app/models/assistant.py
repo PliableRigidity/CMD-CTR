@@ -51,6 +51,17 @@ class AssistantResponse(BaseModel):
     agents: list[AgentStatus] = Field(default_factory=list)
     logs: list[CommandLogEntry] = Field(default_factory=list)
     payload: dict[str, Any] = Field(default_factory=dict)
+    # True ONLY when SILVIA genuinely needs an immediate answer to continue
+    # (clarification, choice, approval, confirmation, missing parameter, workflow
+    # step, or a direct question). Drives voice follow-up: the mic only re-opens
+    # (WAITING_FOR_REPLY) when true; otherwise voice returns to WAKE_LISTENING.
+    # Determined deterministically — NOT by punctuation alone. Polite closings
+    # ("feel free to ask") are explicitly excluded.
+    expects_reply: bool = False
+    # Why follow-up was (not) triggered:
+    # clarification | confirmation | approval | choice | missing_parameter |
+    # workflow | none  (always "none" when expects_reply is False)
+    followup_reason: str = "none"
 
 
 class ModeSelection(BaseModel):

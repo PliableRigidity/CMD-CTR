@@ -76,7 +76,7 @@ CATEGORY_RULES = {
     },
     "economy": {
         "positive": [
-            "inflation", "rates", "central bank", "tariffs", "market selloff", 
+            "inflation", "rates", "central bank", "tariffs", "market selloff",
             "gdp", "trade", "sanctions", "oil shock", "recession", "jobs report",
             "bank of england", "federal reserve", "economy", "investors", "stock market"
         ],
@@ -84,7 +84,40 @@ CATEGORY_RULES = {
             "economy of motion"
         ],
         "weight": 1.0
-    }
+    },
+    "engineering": {
+        "positive": [
+            "raspberry pi", "arduino", "3d printing", "3d printer", "pcb", "kicad",
+            "embedded", "microcontroller", "fpga", "stm32", "esp32", "soldering",
+            "oscilloscope", "cad", "cnc", "lathe", "drill press", "maker",
+            "electronics project", "circuit", "sensor", "actuator", "motor driver",
+            "robotics platform", "drone build", "quadcopter", "flight controller",
+            "ros", "gazebo", "lidar", "imu", "servo", "stepper", "pwm",
+            "hackaday", "ieee", "tom's hardware", "new atlas",
+            "semiconductor fab", "manufacturing", "injection mold",
+        ],
+        "negative": [
+            "social engineering", "reverse engineering malware",
+            "financial engineering", "genetic engineering",
+        ],
+        "weight": 1.2
+    },
+    "cyber": {
+        "positive": [
+            "vulnerability", "cve", "exploit", "ransomware", "malware", "phishing",
+            "zero-day", "zero day", "data breach", "backdoor", "botnet", "ddos",
+            "apt", "threat actor", "credential", "authentication bypass",
+            "remote code execution", "rce", "sql injection", "xss",
+            "cisa", "cert", "nist", "soc", "siem", "firewall", "ids", "ips",
+            "infosec", "cybersecurity", "security advisory", "patch tuesday",
+            "bleepingcomputer", "krebs", "hacker news security",
+            "dark reading", "securityweek", "threat intelligence",
+        ],
+        "negative": [
+            "cyber monday", "cyber cafe",
+        ],
+        "weight": 1.3
+    },
 }
 
 class CategoryClassifier:

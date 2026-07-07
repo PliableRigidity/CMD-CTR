@@ -1,0 +1,56 @@
+[
+  {
+    "id": "og-001",
+    "category": "obsidian_grounding",
+    "question": "What are my current main projects?",
+    "requires_obsidian_retrieval": true,
+    "must_not_invent": true,
+    "expected_behavior": "List real projects from Obsidian/Brain63 notes or the project registry, with retrieval evidence attached. No invented projects.",
+    "failure_type": "grounding"
+  },
+  {
+    "id": "og-002",
+    "category": "obsidian_grounding",
+    "question": "What is Silvia supposed to do?",
+    "requires_obsidian_retrieval": true,
+    "must_include_any": ["assistant", "AI", "command", "voice"],
+    "expected_behavior": "Describe SILVIA's purpose from documented knowledge (Obsidian notes / project docs), not from generic guessing.",
+    "failure_type": "grounding"
+  },
+  {
+    "id": "og-003",
+    "category": "obsidian_grounding",
+    "question": "What is the current status of Silvia?",
+    "requires_obsidian_retrieval": true,
+    "must_not_invent": true,
+    "expected_behavior": "Report the actual documented status/phase from retrieved notes. If no status note exists, say so instead of guessing.",
+    "failure_type": "grounding"
+  },
+  {
+    "id": "og-004",
+    "category": "obsidian_grounding",
+    "question": "What are my robotics projects?",
+    "requires_obsidian_retrieval": true,
+    "must_not_invent": true,
+    "expected_behavior": "List only robotics projects found in retrieved Obsidian notes / registries. Admit uncertainty if nothing is retrieved.",
+    "failure_type": "grounding"
+  },
+  {
+    "id": "og-005",
+    "category": "obsidian_grounding",
+    "question": "Summarise what you know about my projects from Obsidian.",
+    "requires_obsidian_retrieval": true,
+    "must_not_invent": true,
+    "expected_behavior": "Summarize retrieved Obsidian/Brain63 content and show which notes were used. Must not answer from thin air.",
+    "failure_type": "grounding"
+  },
+  {
+    "id": "og-006",
+    "category": "obsidian_grounding",
+    "question": "What are my goals for Silvia?",
+    "requires_obsidian_retrieval": true,
+    "must_not_invent": true,
+    "expected_behavior": "State goals only as documented in retrieved notes; otherwise say there is not enough information.",
+    "failure_type": "grounding"
+  }
+]

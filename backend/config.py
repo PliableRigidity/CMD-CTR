@@ -60,12 +60,39 @@ PIPER_USE_CUDA = os.getenv("PIPER_USE_CUDA", "false").lower() == "true"
 STT_PROVIDER = os.getenv("STT_PROVIDER", "speaches")  # speaches | whisper
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "speaches")  # speaches | piper
 
-# Voice mode and wake word hardening
-VOICE_MODE = os.getenv("VOICE_MODE", "hybrid")  # push_to_talk | wake_word | hybrid
-WAKE_WORD_THRESHOLD = float(os.getenv("WAKE_WORD_THRESHOLD", "0.75"))
-WAKE_WORD_COOLDOWN_SECONDS = float(os.getenv("WAKE_WORD_COOLDOWN_SECONDS", "5"))
-WAKE_CONFIRMATION_ENABLED = os.getenv("WAKE_CONFIRMATION_ENABLED", "true").lower() in ("true", "1", "yes")
-WAKE_MIN_COMMAND_WORDS = int(os.getenv("WAKE_MIN_COMMAND_WORDS", "3"))
+# ── Voice mode ────────────────────────────────────────────────────────────────
+# STABLE DEFAULT is stt_only: speech-to-text only. No auto TTS, no sentence
+# chunking, no follow-up listening, no continuous conversation loop. Wake word
+# (or push-to-talk) captures ONE utterance, transcribes it, sends it to chat as
+# text, and returns to listening. Speech output happens ONLY when the user clicks
+# the manual play/replay button.
+#
+# Supported modes:
+#   off                   — voice fully disabled
+#   stt_only              — wake word → one utterance → transcribe → chat (STABLE DEFAULT)
+#   push_to_talk          — manual mic button → one utterance → transcribe → chat
+#   wake_word             — same as stt_only (wake-word gated capture)
+#   presence_experimental — the old conversational pipeline (auto TTS, follow-up,
+#                           barge-in, sentence streaming). UNSTABLE — disabled by
+#                           default. Was formerly "presence_fast"/"presence".
+VOICE_SUPPORTED_MODES = ("off", "stt_only", "push_to_talk", "wake_word", "presence_experimental")
+VOICE_MODE = os.getenv("VOICE_MODE", "stt_only")
+# Legacy aliases → presence_experimental (kept disabled unless explicitly opted in)
+if VOICE_MODE in ("presence", "presence_fast"):
+    VOICE_MODE = "presence_experimental"
+if VOICE_MODE not in VOICE_SUPPORTED_MODES:
+    VOICE_MODE = "stt_only"
+
+# Conversational features — OFF in stable mode. Only honoured by presence_experimental.
+VOICE_AUTO_TTS = os.getenv("VOICE_AUTO_TTS", "false").lower() in ("true", "1", "yes")
+VOICE_FOLLOWUP_ENABLED = os.getenv("VOICE_FOLLOWUP_ENABLED", "false").lower() in ("true", "1", "yes")
+VOICE_PRESENCE_ENABLED = (VOICE_MODE == "presence_experimental")
+
+WAKE_WORD_THRESHOLD = float(os.getenv("WAKE_WORD_THRESHOLD", "0.65"))
+WAKE_WORD_COOLDOWN_SECONDS = float(os.getenv("WAKE_WORD_COOLDOWN_SECONDS", "0"))  # 0=disabled for debugging; set to 2 in production
+WAKE_BYPASS_COOLDOWN_CONFIDENCE = float(os.getenv("WAKE_BYPASS_COOLDOWN_CONFIDENCE", "0.95"))  # bypass cooldown when prob >= this
+WAKE_CONFIRMATION_ENABLED = os.getenv("WAKE_CONFIRMATION_ENABLED", "false").lower() in ("true", "1", "yes")
+WAKE_MIN_COMMAND_WORDS = int(os.getenv("WAKE_MIN_COMMAND_WORDS", "2"))
 IGNORE_SYSTEM_AUDIO = os.getenv("IGNORE_SYSTEM_AUDIO", "true").lower() in ("true", "1", "yes")
 
 # Terminal / SSH
@@ -145,7 +172,11 @@ VISION_LEGACY_FALLBACK      = os.getenv("VISION_LEGACY_FALLBACK", "llava:latest"
 VISION_CONFIDENCE_THRESHOLD = float(os.getenv("VISION_CONFIDENCE_THRESHOLD", "0.65"))
 
 WORLD_MODEL_NAME = "phi4-mini-reasoning:latest"
-CONVERSATION_MODEL = "gemma3:4b"
+# Switched from gemma3:4b → qwen2.5:3b (2026-06-28): gemma3's Sliding-Window
+# Attention trips Ollama 0.30.11's prompt-cache path, adding a fixed ~1.9s
+# load_duration per request. qwen2.5:3b (non-SWA) cuts per-turn latency ~5s→~2s
+# and roughly doubles generation throughput (127→229 tok/s) on this machine.
+CONVERSATION_MODEL = "qwen2.5:3b"
 ACTION_GENERATOR_MODEL = "qwen2.5:3b"
 SARASWATI_MODEL = "phi4-mini-reasoning:latest"
 LAKSHMI_MODEL = "gemma2:2b"

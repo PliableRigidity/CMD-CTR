@@ -4710,6 +4710,15 @@ _HW_SUMMARY = re.compile(
     r"^(?:hardware\s+(?:summary|overview|status|inventory)|show\s+hardware(?:\s+summary)?|what\s+hardware\s+do\s+i\s+have)[\?\.!]?$",
     re.I,
 )
+# Natural-language question forms not covered by imperative patterns above
+_HW_PROJ_NATURAL_Q = re.compile(
+    r"^what\s+(?:hardware|hw)\s+projects?\s+(?:do\s+i\s+have|are\s+(?:there|mine|active))\s*[\?\.!]?$",
+    re.I,
+)
+_HW_INVENTORY_NATURAL_Q = re.compile(
+    r"^what(?:'s|\s+is)\s+(?:in\s+)?(?:my\s+)?(?:hardware\s+)?inventory\s*[\?\.!]?$",
+    re.I,
+)
 _HW_GET_COMP = re.compile(
     r"^(?:show|get|details?\s+for|info\s+on|lookup)\s+(?:component|part|chip|sensor)?\s*(?P<name>.+?)[\?\.!]?$",
     re.I,
@@ -4918,6 +4927,14 @@ def _regex_hardware(query: str) -> dict | None:
 
     # Summary
     if _HW_SUMMARY.match(text):
+        return {"action": "call_tool", "name": "hw_inventory_summary", "args": {}}
+
+    # Natural-language question forms: "what hardware projects do I have?"
+    if _HW_PROJ_NATURAL_Q.match(text):
+        return {"action": "call_tool", "name": "list_hw_projects", "args": {}}
+
+    # Natural-language inventory questions: "what's in my hardware inventory?"
+    if _HW_INVENTORY_NATURAL_Q.match(text):
         return {"action": "call_tool", "name": "hw_inventory_summary", "args": {}}
 
     # List all inventory
