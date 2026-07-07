@@ -157,3 +157,11 @@ and `agent/reports/history/`.
 - **og-005** (obsidian_grounding): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.; Test requires Obsidian/knowledge retrieval but the response carried no sources and no knowledge-related tool calls.
 - **tu-003** (tool_usage): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.; Expected a tool call containing one of ['hardware', 'project']; captured tool calls: none.
 - **tu-004** (tool_usage): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.; Expected a tool call containing one of ['inventory', 'hardware']; captured tool calls: none.
+
+## Run 2026-07-07 21:30:21 — 5 failure(s)
+
+- **hal-005** (hallucination): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.
+- **og-001** (obsidian_grounding): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.; Test requires Obsidian/knowledge retrieval but the response carried no sources and no knowledge-related tool calls.
+- **og-005** (obsidian_grounding): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.; Test requires Obsidian/knowledge retrieval but the response carried no sources and no knowledge-related tool calls.
+- **tu-003** (tool_usage): Expected a tool call containing one of ['hardware', 'project']; captured tool calls: none.
+- **tu-004** (tool_usage): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.; Expected a tool call containing one of ['inventory', 'hardware']; captured tool calls: none.

@@ -294,3 +294,35 @@ Raw machine-readable results live in `agent/logs/run_<timestamp>.json`.
   - [PASS] vp-002 — TTS synthesizes short text quickly
   - [PASS] vp-003 — Voice latency metrics endpoint responds
   - [PASS] vp-004 — What time is it? (2.078s)
+
+## Run 2026-07-07 21:30:21
+
+- Silvia reachable: True
+- Tests: 25 | Passed: 20 | Failed: 5
+- Raw log: `agent/logs/run_20260707_213021.json`
+- Report: `agent/reports/latest_failure_report.md`
+  - [PASS] hal-001 — What is Project Nebula? (5.552s)
+  - [PASS] hal-002 — What is Project Artemis? (13.497s)
+  - [PASS] hal-003 — What is the deadline for Project Nebula? (9.154s)
+  - [PASS] hal-004 — What is the current status of Project Zephyr? (2.06s)
+  - [FAIL] hal-005 — What did I decide about Project Nebula in my notes? (30.417s)
+  - [PASS] hal-006 — Give me a quick update on Silvia. (2.132s)
+  - [PASS] lat-001 — Hello, are you online? (2.081s)
+  - [PASS] lat-002 — What time is it? (2.069s)
+  - [PASS] lat-003 — Give me a quick update on Silvia. (2.063s)
+  - [PASS] lat-004 — What are my current main projects? (5.809s)
+  - [FAIL] og-001 — What are my current main projects? (14.327s)
+  - [PASS] og-002 — What is Silvia supposed to do? (2.101s)
+  - [PASS] og-003 — What is the current status of Silvia? (2.103s)
+  - [PASS] og-004 — What are my robotics projects? (2.055s)
+  - [FAIL] og-005 — Summarise what you know about my projects from Obsidian. (2.066s)
+  - [PASS] og-006 — What are my goals for Silvia? (10.307s)
+  - [PASS] tu-001 — What time is it? (2.049s)
+  - [PASS] tu-002 — Show chat latency (2.079s)
+  - [FAIL] tu-003 — What hardware projects do I have? (9.979s)
+  - [FAIL] tu-004 — What's in my hardware inventory? (2.099s)
+  - [PASS] tu-005 — Open the knowledge board. (2.076s)
+  - [PASS] vp-001 — Voice subsystem reports a valid state
+  - [PASS] vp-002 — TTS synthesizes short text quickly
+  - [PASS] vp-003 — Voice latency metrics endpoint responds
+  - [PASS] vp-004 — What time is it? (2.094s)

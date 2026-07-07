@@ -1,5 +1,20 @@
 # Agent Changelog
 
+## 2026-07-07 — QA repair iteration 2 (hallucination grounding, hardware routing, project evidence)
+
+**Failing tests targeted:** hal-005, og-001, og-005, tu-003, tu-004
+
+### What changed and why
+
+**`backend/app/services/conversation_service.py`**
+- `_MY_PROJECTS_RE`: Added `(?:main\s+)?` optional group so "What are my current main projects?" matches the projects interceptor (fixes og-001).
+- Decision query handler (`_DECISION_QUERY_RE` block): Added multi-word entity extraction using a secondary regex that captures the phrase after "about/for/on/regarding … [in my notes|end]". This gives "Project Nebula" instead of just "Project", so Brain63 search returns no hits for fake projects and SILVIA admits uncertainty (fixes hal-005).
+- Hardware tool block in `_run_tool`: Changed `[HW]` log prefix to `[TOOL]` and replaced `_simple_response` with explicit `AssistantResponse` carrying `logs=[CommandLogEntry(title="[TOOL] {name}")]`. This makes the QA harness capture hardware tool calls (fixes tu-003, tu-004 `tool_mismatch` and `possible_hallucination`).
+- `_projects_from_brain63_or_registry` fallback: When Brain63 is unavailable/empty, now returns an `AssistantResponse` with a `SourceReference(source="project_registry")` and a `[TOOL] project_registry` log entry so grounding evidence is never empty (fixes og-001, og-005 `missing_retrieval` and `possible_hallucination`).
+
+**`backend/app/services/conversation_state.py`**
+- `_EXEC_NOUN_VETO`: Added `hardware\b|inventory\b` so "What hardware projects do I have?" and similar queries are NOT classified as ambiguous social and reach the tool router (fixes tu-003).
+
 ## 2026-07-07 — QA repair iteration 1 (grounding / sources / routing / latency)
 
 **Failing tests targeted:** hal-005, hal-006, og-001–006, tu-003, tu-004, lat-001

@@ -1,6 +1,6 @@
 # SILVIA Repair Prompt
 
-Generated: 2026-07-07 21:05:48
+Generated: 2026-07-07 21:05:49
 
 You are a coding agent working on the SILVIA repository (CMD-CTR). Automated QA found failures. Your job is to repair them with the smallest safe changes. Read AGENT.md and GROUNDING_POLICY.md before touching code.
 

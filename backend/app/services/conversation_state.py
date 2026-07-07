@@ -322,6 +322,7 @@ _FACT_QUESTION_PREFIX = re.compile(
 _EXEC_NOUN_VETO = re.compile(
     r"\b(?:online|offline|alive|dead|reachable|unreachable|"   # node state words
     r"nighthawk|raspberry\s*pi|rpi\w*|esp\w*|jetson\w*|"       # device patterns
+    r"hardware\b|inventory\b|"                                  # hardware queries must reach the tool router
     r"timezone|time\b|tz\b|volume|ssh\b|vpn\b|mqtt\b|"        # system entities
     r"spotify|discord|vscode|vs\s*code|chrome|firefox|terminal|"  # specific apps
     r"ip\s+address|subnet|gateway|dns|firewall|port\s+\d|"     # network terms
