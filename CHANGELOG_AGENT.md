@@ -85,3 +85,9 @@ date, what changed, why, and files touched. See AGENT.md rule 8.
   during verification (vp-001 voice-status shape; hal-003/tu-002 honest-answer
   phrasings). Confirmed genuine hallucination catch: SILVIA fabricated a
   "council decision" for the fake Project Nebula (hal-005).
+
+## 2026-07-07 21:30:21 — autopilot iteration 1 kept
+
+- Critical dropped 5 -> 4.; Hallucination failures dropped 5 -> 4.
+- Files: HANGELOG_AGENT.md, agent/reports/latest_repair_prompt.md, backend/app/services/conversation_service.py, backend/app/services/conversation_state.py, logs/app.log, logs/errors.log
+- Commit: 9291bb6cec0faac2e1ea73e013671b4bcc555d4a
