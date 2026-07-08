@@ -30,6 +30,34 @@ class MemoryManager:
         self._providers: dict[str, MemoryProvider] = {}
         self._priority: list[str] = list(DEFAULT_PRIORITY)
         self._init_providers()
+        self._priority = self._build_priority()
+
+    def _build_priority(self) -> list[str]:
+        """Compute read priority given which providers loaded and KOSINE flags.
+
+        - KOSINE off  → original order (Brain63 first).
+        - KOSINE on, not primary → existing order, KOSINE appended last.
+        - KOSINE on + KOSINE_PRIMARY → KOSINE first, Brain63 demoted to last
+          (fallback), everything else in between.
+        """
+        from backend import config
+
+        base = [p for p in DEFAULT_PRIORITY if p in self._providers and p != "brain63"]
+        has_brain63 = "brain63" in self._providers
+        has_kosine = "kosine" in self._providers
+
+        if has_kosine and config.KOSINE_PRIMARY:
+            order = ["kosine"] + base
+            if has_brain63:
+                order.append("brain63")  # fallback / backup, read-only
+            return order
+
+        # KOSINE not primary: keep the historical order (Brain63 first).
+        order = list(DEFAULT_PRIORITY) if has_brain63 else base
+        order = [p for p in order if p in self._providers]
+        if has_kosine and "kosine" not in order:
+            order.append("kosine")
+        return order
 
     def _init_providers(self) -> None:
         try:
@@ -67,6 +95,17 @@ class MemoryManager:
             self._providers["sqlite"] = SQLiteProvider()
         except Exception as e:
             logger.warning("SQLite provider init failed: %s", e)
+
+        # KOSINE — structured memory backend (Phase 19). Registered only when
+        # enabled; promotion to primary read is controlled separately by
+        # KOSINE_PRIMARY in _build_priority().
+        try:
+            from backend import config
+            if config.KOSINE_ENABLED:
+                from backend.app.memory.kosine_provider import KosineProvider
+                self._providers["kosine"] = KosineProvider()
+        except Exception as e:
+            logger.warning("KOSINE provider init failed: %s", e)
 
         logger.info("Memory Manager: %d providers loaded", len(self._providers))
 

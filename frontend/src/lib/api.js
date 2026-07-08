@@ -1323,3 +1323,51 @@ export async function rejectBrain63Draft(code) {
 export async function fetchBrain63Diff(code) {
   return readJson(await _apiFetch(`${API_BASE}/brain63/diff/${encodeURIComponent(code)}`));
 }
+
+// ---------------------------------------------------------------------------
+// KOSINE — structured memory backend (Phase 19)
+// ---------------------------------------------------------------------------
+
+export async function fetchKosineStatus() {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/status`));
+}
+
+export async function kosineMigratePreview() {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/migrate/preview`, { method: "POST" }));
+}
+
+export async function kosineMigrate(backup = true) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/migrate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backup }),
+  }));
+}
+
+export async function fetchKosineBackups() {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/backups`));
+}
+
+export async function kosineRestore(backup_name, confirm = false) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backup_name, confirm }),
+  }));
+}
+
+export async function fetchKosineAudit(limit = 50) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/audit?limit=${limit}`));
+}
+
+export async function kosineMaintenanceScan(limit = 100) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/maintenance/scan?limit=${limit}`));
+}
+
+export async function kosineMaintenanceRun(draft = false) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/maintenance/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft }),
+  }));
+}

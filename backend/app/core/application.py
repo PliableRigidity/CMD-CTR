@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from backend.app.api import actions, assistant, brain63, decision, desktop, devices, events, fleet, hardware, maps, memory, memory_providers, missions, mission_control, mode, nodes, observability, personal, planner, presence, productivity, project_intelligence, projects, safety, scheduled_tasks, services, system, telegram, voice, watch, web, workflows, workspace, world
+from backend.app.api import actions, assistant, brain63, decision, desktop, devices, events, fleet, hardware, kosine, maps, memory, memory_providers, missions, mission_control, mode, nodes, observability, personal, planner, presence, productivity, project_intelligence, projects, safety, scheduled_tasks, services, system, telegram, voice, watch, web, workflows, workspace, world
 from backend.app.core.auth_middleware import AuthMiddleware
 from backend.app.models.nodes import NodeMetricsUpdate
 from backend.app.orchestration.assistant_router import AssistantPlatformRouter
@@ -734,4 +734,5 @@ def create_app() -> FastAPI:
     app.include_router(memory_providers.router, prefix="/api")
     app.include_router(brain63.router, prefix="/api")
     app.include_router(presence.router, prefix="/api")
+    app.include_router(kosine.router, prefix="/api")
     return app

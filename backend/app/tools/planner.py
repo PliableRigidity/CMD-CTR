@@ -2971,6 +2971,7 @@ _BOARD_ALIASES: list[tuple["re.Pattern[str]", str, str]] = [
     (re.compile(r"\bnodes?\s+board\b|\bnodes?\s+view\b",              re.I), "nodes",           "/nodes"),
     (re.compile(r"\bapps?\s+board\b|\bapps?\s+view\b",                re.I), "apps",            "/apps"),
     # Advanced / Developer Mode boards
+    (re.compile(r"\bkosine\b|\bstructured\s+memory\b",               re.I), "kosine",           "/kosine"),
     (re.compile(r"\bknowledge\b|\bgraph\b|\bkg\b",                    re.I), "knowledge_graph",  "/knowledge"),
     (re.compile(r"\bmemory\s+board|\bproject\s+memory|\beng.*memory", re.I), "memory",          "/memory"),
     (re.compile(r"\bworkspace\b|\bdigital\s*twin\b|\btwin\b",         re.I), "workspace",        "/workspace"),
@@ -2989,6 +2990,7 @@ _BOARD_ALIASES: list[tuple["re.Pattern[str]", str, str]] = [
 _BOARD_LABELS: dict[str, str] = {
     "intel":          "Intel Board",
     "hardware":       "Hardware Board",
+    "kosine":         "KOSINE Memory",
     "knowledge_graph": "Knowledge Graph",
     "memory":         "Project Memory",
     "workspace":      "Workspace Digital Twin",
@@ -3008,6 +3010,7 @@ _BOARD_LABELS: dict[str, str] = {
 _BOARD_NAME_FRAG = (
     r"intel(?:\s+board)?|intelligence(?:\s+board)?|world\s+intel(?:\s+board)?|"
     r"hardware(?:\s+(?:board|ops(?:\s+center)?))?|"
+    r"kosine(?:\s+(?:board|memory|dashboard))?|structured\s+memory(?:\s+board)?|"
     r"knowledge(?:\s+graph)?(?:\s+board)?|knowledge\s+graph\s+board|graph\s+board|engineering\s+graph|"
     r"voice(?:\s+diagnostics?)?|"
     r"fleet(?:\s+dashboard)?|fleet\s+view|"
@@ -3035,6 +3038,7 @@ _BOARD_SHOW_RE = re.compile(
     r"(?P<board>"
     r"intel(?:\s+board)|intelligence(?:\s+board)|world\s+intel(?:\s+board)|"
     r"hardware(?:\s+board)|"
+    r"kosine(?:\s+(?:board|memory|dashboard))|structured\s+memory(?:\s+board)|"
     r"knowledge(?:\s+graph)?\s+board|"
     r"voice(?:\s+diagnostics?)|"
     r"fleet(?:\s+dashboard)|"

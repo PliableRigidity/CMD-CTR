@@ -40,6 +40,31 @@ BRAIN63_VAULT_PATH = os.getenv(
 )
 BRAIN_STEWARD_AUTODRAFT = os.getenv("BRAIN_STEWARD_AUTODRAFT", "false").lower() in ("true", "1", "yes")
 
+# ── KOSINE — structured memory backend (Phase 19) ───────────────────────────────
+# KOSINE is a local-first structured knowledge system (GitHub/KOS). SILVIA talks to
+# it in-process via kos.sdk.KOSClient. Migration is gradual: KOSINE becomes the
+# PRIMARY read provider only when KOSINE_PRIMARY is set; Brain63 stays as a
+# read-only fallback/backup. Every flag defaults OFF so nothing changes until each
+# stage is validated.
+#
+#   KOSINE_ENABLED             — register the KOSINE memory provider at all
+#   KOSINE_PRIMARY             — promote KOSINE to first read priority (Brain63 → fallback)
+#   KOSINE_DB_PATH             — target SQLite db (default: KOSINE's own kosine.db)
+#   KOSINE_BASE_URL            — if set, use REST mode instead of in-process SDK
+#   KOSINE_REPO_PATH           — fallback sys.path entry if `import kos` is not installed
+#   KOSINE_ALLOW_WRITES        — permit SILVIA-originated writes (create/update/relate)
+#   KOSINE_MAINTENANCE_AUTODRAFT — let the maintenance loop auto-draft suggestion workflows
+KOSINE_ENABLED = os.getenv("KOSINE_ENABLED", "false").lower() in ("true", "1", "yes")
+KOSINE_PRIMARY = os.getenv("KOSINE_PRIMARY", "false").lower() in ("true", "1", "yes")
+KOSINE_REPO_PATH = os.getenv("KOSINE_REPO_PATH", r"C:\Users\IshaanV\Documents\GitHub\KOS")
+KOSINE_DB_PATH = os.getenv(
+    "KOSINE_DB_PATH",
+    str(Path(KOSINE_REPO_PATH) / "kosine.db"),
+)
+KOSINE_BASE_URL = os.getenv("KOSINE_BASE_URL", "")  # empty = in-process SDK mode
+KOSINE_ALLOW_WRITES = os.getenv("KOSINE_ALLOW_WRITES", "false").lower() in ("true", "1", "yes")
+KOSINE_MAINTENANCE_AUTODRAFT = os.getenv("KOSINE_MAINTENANCE_AUTODRAFT", "false").lower() in ("true", "1", "yes")
+
 # External notifications (Watch Officer alerts)
 NOTIFICATION_WEBHOOK_URL     = os.getenv("NOTIFICATION_WEBHOOK_URL", "")
 NOTIFICATION_WEBHOOK_FORMAT  = os.getenv("NOTIFICATION_WEBHOOK_FORMAT", "discord")
