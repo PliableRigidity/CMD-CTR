@@ -123,3 +123,29 @@ async def maintenance_run(data: MaintenanceRunRequest):
         return {"ok": True, **kmnt.run(draft=data.draft)}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ── suggestions (approval-gated apply) ────────────────────────────────────────
+
+@router.get("/suggestions")
+async def list_suggestions(limit: int = 50):
+    """List KOSINE suggestion workflows (drafts + resolved)."""
+    from backend.app.services.workflow_engine import get_workflow_engine
+    from backend.app.services.kosine_apply import SUGGESTION_CATEGORY
+    wfs = [w for w in get_workflow_engine().get_all(limit=200)
+           if w.get("category") == SUGGESTION_CATEGORY][:limit]
+    return {"ok": True, "suggestions": wfs, "count": len(wfs)}
+
+
+class ApplyRequest(BaseModel):
+    approve: bool = False   # approve the workflow first, then apply
+    dry_run: bool = False   # validate + preview only; no write, no status change
+
+
+@router.post("/suggestions/{code}/apply")
+async def apply_suggestion(code: str, data: ApplyRequest = ApplyRequest()):
+    from backend.app.services import kosine_apply as ka
+    try:
+        return ka.apply_suggestion(code, approve=data.approve, dry_run=data.dry_run, actor="user")
+    except Exception as e:
+        return {"ok": False, "code": code, "error": str(e)}

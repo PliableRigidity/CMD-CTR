@@ -3077,6 +3077,38 @@ def _regex_board(query: str) -> dict | None:
     return {"action": "call_tool", "name": "open_board", "args": {"board": board_id, "route": route}}
 
 
+# ── KOSINE suggestion apply (Phase 19b) ───────────────────────────────────────
+_KOSINE_APPLY_RE = re.compile(
+    r"^(?P<approve>approve\s+and\s+)?apply\s+kosine\s+suggestion\s+"
+    r"(?P<code>wf-?\d+|\d+)"
+    r"(?P<dry>\s+dry[-\s]?run)?[\?\.!]?$",
+    re.I,
+)
+
+
+def _regex_kosine_apply(query: str) -> dict | None:
+    """Match 'apply kosine suggestion <id>' / 'approve and apply kosine suggestion <id>'.
+
+    Accepts WF-042, wf42, or a bare number (normalized to WF-0NN). Optional
+    trailing 'dry run'. Returns a call_tool route to apply_kosine_suggestion.
+    """
+    m = _KOSINE_APPLY_RE.match((query or "").strip())
+    if not m:
+        return None
+    raw = m.group("code").upper().replace(" ", "")
+    digits = re.sub(r"\D", "", raw)
+    code = f"WF-{int(digits):03d}" if digits else raw
+    return {
+        "action": "call_tool",
+        "name": "apply_kosine_suggestion",
+        "args": {
+            "code": code,
+            "approve": bool(m.group("approve")),
+            "dry_run": bool(m.group("dry")),
+        },
+    }
+
+
 # ── Knowledge Graph (Phase 14A) ───────────────────────────────────────────────
 _KG_GENERAL_RE = re.compile(
     r"^(?:show|view|display)\s+(?:the\s+)?(?:knowledge\s+graph|engineering\s+graph|kg|project\s+graph)[\?\.!]?$|"

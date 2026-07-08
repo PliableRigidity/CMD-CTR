@@ -659,6 +659,17 @@ class ConversationService:
             if _wf_resp is not None:
                 _persist(_wf_resp.answer)
                 return _stamp(_wf_resp)
+        # ──────────────────────────────────────────────────────────────────────
+
+        # ── KOSINE suggestion apply fast path (Phase 19b) ─────────────────────
+        # "apply kosine suggestion WF-042" / "approve and apply kosine suggestion 42"
+        from backend.app.tools.planner import _regex_kosine_apply as _ka_pre
+        _ka_route = _ka_pre(_raw_q)
+        if _ka_route is not None:
+            _ka_resp = await self._execute_plan(_ka_route, request)
+            if _ka_resp is not None:
+                _persist(_ka_resp.answer)
+                return _stamp(_ka_resp)
 
         # ── Memory Provider fast path ─────────────────────────────────────────
         from backend.app.tools.planner import _regex_memory_provider as _mp_pre
@@ -2110,6 +2121,41 @@ class ConversationService:
                             "label":  label,
                         },
                     },
+                )
+
+            if name == "apply_kosine_suggestion":
+                code = (args.get("code") or "").strip()
+                approve = bool(args.get("approve", False))
+                dry_run = bool(args.get("dry_run", False))
+                await self._emit_tool(
+                    "[TOOL] apply_kosine_suggestion",
+                    f"{code} approve={approve} dry_run={dry_run}",
+                )
+                from backend.app.services import kosine_apply as _ka
+                res = _ka.apply_suggestion(code, approve=approve, dry_run=dry_run, actor="user")
+                if res.get("ok") and res.get("dry_run"):
+                    wa = res.get("would_apply", {})
+                    message = (f"Dry-run for **{code}**: would call `{wa.get('tool')}` "
+                               f"with `{wa.get('args')}`. "
+                               f"Writes are {'ENABLED' if res.get('allow_writes') else 'DISABLED'}.")
+                elif res.get("ok"):
+                    message = f"Applied KOSINE suggestion **{code}** — workflow status: {res.get('status')}."
+                else:
+                    message = f"Could not apply **{code}**: {res.get('error')}"
+                return AssistantResponse(
+                    mode="conversation",
+                    title=f"KOSINE apply: {code}",
+                    answer=message,
+                    confidence=0.95,
+                    reasoning="KOSINE suggestion apply (approval-gated).",
+                    processing_time_ms=0,
+                    sources=[],
+                    logs=[CommandLogEntry(
+                        timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        title=f"KOSINE apply: {code}",
+                        detail=message,
+                    )],
+                    payload={"kosine_apply": res},
                 )
 
             if name == "show_knowledge_graph":

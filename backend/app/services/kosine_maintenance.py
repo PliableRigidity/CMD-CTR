@@ -200,7 +200,7 @@ def run(draft: bool = False) -> dict[str, Any]:
                 if not f.get("suggested_action", {}).get("tool"):
                     continue  # informational only (e.g. duplicates/orphans) — no auto-fix tool
                 wf = engine.create(
-                    category="memory_update",
+                    category="kosine_suggestion",
                     title=f"KOSINE {f['kind']}: {f['title'] or f['object_id']}",
                     description=f["detail"],
                     risk_level="low",
@@ -209,8 +209,8 @@ def run(draft: bool = False) -> dict[str, Any]:
                     tool_args=f["suggested_action"]["params"],
                     affected=[f["object_id"]] if f["object_id"] else [],
                     project="KOSINE",
-                    template="memory_entry",
-                    auto_submit=False,  # draft only — requires explicit human review
+                    template="kosine_suggestion",
+                    auto_submit=False,  # draft only — requires explicit human review + apply
                 )
                 drafted.append(wf.get("code", ""))
         except Exception as e:

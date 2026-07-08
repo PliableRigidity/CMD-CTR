@@ -33,6 +33,7 @@ WORKFLOW_CATEGORIES = frozenset({
     "procurement", "project_change", "brain63_update",
     "memory_update", "infrastructure", "service_action",
     "calendar_change", "email_action", "robotics",
+    "kosine_suggestion",
 })
 
 EXPIRY_SECONDS = 30 * 60  # 30 minutes for workflows
@@ -227,7 +228,24 @@ class WorkflowEngine:
             "expires_at": expires,
         }
 
-    # ── Approve / Reject / Cancel ──────────────────────────────────────────
+    # ── Submit / Approve / Reject / Cancel ─────────────────────────────────
+
+    def submit(self, code: str) -> dict[str, Any]:
+        """Move a draft workflow into pending_review so it can be approved."""
+        wf = self._find_by_code(code)
+        if not wf:
+            return {"ok": False, "error": f"Workflow '{code}' not found."}
+        if wf["status"] == "pending_review":
+            return {"ok": True, "code": code, "status": "pending_review"}
+        if wf["status"] != "draft":
+            return {"ok": False, "error": f"Workflow '{code}' is {wf['status']}, not a draft."}
+        now = _now()
+        with _conn() as db:
+            db.execute(
+                "UPDATE workflows SET status='pending_review', updated_at=? WHERE id=? AND status='draft'",
+                (now, wf["id"]),
+            )
+        return {"ok": True, "code": code, "status": "pending_review"}
 
     def approve(self, code: str, resolved_by: str = "user") -> dict[str, Any]:
         """Approve a pending workflow."""

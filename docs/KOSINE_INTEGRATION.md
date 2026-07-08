@@ -34,6 +34,7 @@ Transport is **in-process** by default (`KOSClient(db_path=...)`). Set
 | Write audit log | `backend/app/memory/kosine_audit.py` |
 | Migration service | `backend/app/services/kosine_migration.py` |
 | Maintenance loop | `backend/app/services/kosine_maintenance.py` |
+| Suggestion apply handler | `backend/app/services/kosine_apply.py` |
 | API router | `backend/app/api/kosine.py` (`/api/kosine/*`) |
 | Frontend board | `frontend/src/pages/KosinePage.jsx` (`/kosine`) |
 | Chat navigation | planner board router (`open kosine board`, `go to kosine`) |
@@ -74,9 +75,37 @@ Transport is **in-process** by default (`KOSClient(db_path=...)`). Set
 - **Brain63 preserved.** Never modified or deleted — remains the read-only,
   human-readable archive and fallback.
 
+## Approval-gated suggestion execution (Phase 19b)
+
+The maintenance loop only ever produces WorkflowEngine **drafts**
+(`category=kosine_suggestion`). Turning an approved suggestion into a KOSINE
+write is the job of the dedicated **apply handler** — the WorkflowEngine owns
+approval state but never mutates KOSINE itself.
+
+```
+suggestion → workflow draft → user approves → kosine_apply validates:
+    · category == kosine_suggestion
+    · KOSINE_ENABLED
+    · tool ∈ {create_memory, update_memory, create_relationship, add_event}  (non-destructive)
+    · workflow is approved
+    · KOSINE_ALLOW_WRITES        (real execution only; dry-run is exempt)
+  → kosine_audit.audited_write(...) → audit record → workflow completed | failed
+```
+
+Guarantees: no execution when `KOSINE_ALLOW_WRITES=false`; no destructive ops
+(allowlist here + destructive tools disabled at transport); every applied
+suggestion produces an audit record; a failed write marks the workflow `failed`,
+never `completed`; a dry-run writes nothing and leaves status unchanged.
+
+**Chat commands**
+- `apply kosine suggestion WF-042` — apply an already-approved suggestion
+- `approve and apply kosine suggestion 42` — approve then apply (accepts bare numbers)
+- append `dry run` to preview without writing
+
 ## API
 
 `GET /api/kosine/status` · `POST /api/kosine/migrate/preview` ·
 `POST /api/kosine/migrate` · `GET /api/kosine/backups` · `POST /api/kosine/restore` ·
 `GET /api/kosine/audit` · `GET /api/kosine/maintenance/scan` ·
-`POST /api/kosine/maintenance/run`
+`POST /api/kosine/maintenance/run` · `GET /api/kosine/suggestions` ·
+`POST /api/kosine/suggestions/{code}/apply`  (body: `{approve, dry_run}`)
