@@ -102,6 +102,13 @@ never `completed`; a dry-run writes nothing and leaves status unchanged.
 - `approve and apply kosine suggestion 42` — approve then apply (accepts bare numbers)
 - append `dry run` to preview without writing
 
+**Dashboard controls** (`/kosine` → Suggestions panel) — status-gated buttons
+Submit for review · Approve · Reject · Dry run apply · Approve & apply. They call
+the state endpoints (`/submit`, `/approve`, `/reject` — WorkflowEngine only) and
+the single execution endpoint (`/apply`). "Approve & apply" is disabled with an
+explanation when `KOSINE_ALLOW_WRITES=false`; dry-run stays available and shows
+the exact operation; the audit log below reflects successful applies.
+
 ## API
 
 `GET /api/kosine/status` · `POST /api/kosine/migrate/preview` ·

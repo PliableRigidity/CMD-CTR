@@ -149,3 +149,52 @@ async def apply_suggestion(code: str, data: ApplyRequest = ApplyRequest()):
         return ka.apply_suggestion(code, approve=data.approve, dry_run=data.dry_run, actor="user")
     except Exception as e:
         return {"ok": False, "code": code, "error": str(e)}
+
+
+# ── suggestion state transitions (WorkflowEngine only — no KOSINE writes) ──────
+# These change workflow state; they never touch KOSINE. The single KOSINE
+# execution path remains kosine_apply.apply_suggestion (the /apply endpoint).
+
+def _require_kosine_suggestion(code: str):
+    from backend.app.services.workflow_engine import get_workflow_engine
+    from backend.app.services.kosine_apply import SUGGESTION_CATEGORY
+    wf = get_workflow_engine().get(code)
+    if not wf:
+        return None, {"ok": False, "code": code, "error": f"Workflow '{code}' not found."}
+    if wf.get("category") != SUGGESTION_CATEGORY:
+        return None, {"ok": False, "code": code,
+                      "error": f"Workflow '{code}' is not a KOSINE suggestion."}
+    return wf, None
+
+
+@router.post("/suggestions/{code}/submit")
+async def submit_suggestion(code: str):
+    from backend.app.services.workflow_engine import get_workflow_engine
+    _, err = _require_kosine_suggestion(code)
+    if err:
+        return err
+    return get_workflow_engine().submit(code)
+
+
+@router.post("/suggestions/{code}/approve")
+async def approve_suggestion(code: str):
+    from backend.app.services.workflow_engine import get_workflow_engine
+    wf, err = _require_kosine_suggestion(code)
+    if err:
+        return err
+    engine = get_workflow_engine()
+    if wf.get("status") == "draft":      # allow approving a draft directly
+        engine.submit(code)
+    return engine.approve(code)
+
+
+@router.post("/suggestions/{code}/reject")
+async def reject_suggestion(code: str):
+    from backend.app.services.workflow_engine import get_workflow_engine
+    wf, err = _require_kosine_suggestion(code)
+    if err:
+        return err
+    engine = get_workflow_engine()
+    if wf.get("status") == "draft":      # reject() needs pending_review
+        engine.submit(code)
+    return engine.reject(code)

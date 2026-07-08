@@ -225,3 +225,56 @@ def test_dry_run_performs_no_write(kos_env, monkeypatch):
     obj = kos_env["client_mod"].get_client().show_object(oid)["object"]
     assert obj["description"] == "original"
     assert kos_env["audit"].read_audit() == []
+
+
+# ── API-level smoke: the dashboard control endpoints ──────────────────────────
+
+def test_suggestion_control_endpoints_lifecycle(kos_env, monkeypatch):
+    """Drives the exact endpoints the /kosine dashboard buttons call."""
+    import asyncio
+    from backend import config
+    from backend.app.api import kosine as api
+
+    oid = _new_object(kos_env, description="orig")
+    code = _make_suggestion("update_memory", {"target": oid, "description": "viaAPI"})
+
+    # list → suggestion visible as draft
+    listing = asyncio.run(api.list_suggestions())
+    row = next(s for s in listing["suggestions"] if s["code"] == code)
+    assert row["status"] == "draft"
+
+    # Submit for review
+    assert asyncio.run(api.submit_suggestion(code))["status"] == "pending_review"
+    # Approve
+    r = asyncio.run(api.approve_suggestion(code))
+    assert r["ok"] and _engine().get(code)["status"] == "approved"
+    # Dry run apply — no write, status unchanged
+    r = asyncio.run(api.apply_suggestion(code, api.ApplyRequest(dry_run=True)))
+    assert r["ok"] and r["dry_run"] and _engine().get(code)["status"] == "approved"
+    # Real apply blocked while writes off
+    r = asyncio.run(api.apply_suggestion(code, api.ApplyRequest(approve=True)))
+    assert r["ok"] is False and _engine().get(code)["status"] == "approved"
+    # Approve & apply once writes are enabled
+    monkeypatch.setattr(config, "KOSINE_ALLOW_WRITES", True)
+    r = asyncio.run(api.apply_suggestion(code, api.ApplyRequest(approve=True)))
+    assert r["ok"] and r["status"] == "completed"
+    assert kos_env["client_mod"].get_client().show_object(oid)["object"]["description"] == "viaAPI"
+
+
+def test_reject_endpoint(kos_env):
+    import asyncio
+    from backend.app.api import kosine as api
+    code = _make_suggestion("update_memory", {"target": "x", "description": "y"})
+    r = asyncio.run(api.reject_suggestion(code))
+    assert r.get("ok") and r["status"] == "rejected"
+    assert _engine().get(code)["status"] == "rejected"
+
+
+def test_state_endpoints_refuse_non_suggestion(kos_env):
+    import asyncio
+    from backend.app.api import kosine as api
+    wf = _engine().create(category="memory_update", title="x",
+                          tool_name="update_memory", tool_args={}, auto_submit=False)
+    for fn in (api.submit_suggestion, api.approve_suggestion, api.reject_suggestion):
+        r = asyncio.run(fn(wf["code"]))
+        assert r["ok"] is False and "not a KOSINE suggestion" in r["error"]

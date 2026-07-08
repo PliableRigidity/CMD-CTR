@@ -4,6 +4,8 @@ import {
   fetchKosineStatus, kosineMigratePreview, kosineMigrate,
   fetchKosineBackups, kosineRestore, fetchKosineAudit,
   kosineMaintenanceScan, kosineMaintenanceRun,
+  fetchKosineSuggestions, kosineApplySuggestion,
+  kosineSubmitSuggestion, kosineApproveSuggestion, kosineRejectSuggestion,
 } from "../lib/api";
 
 const T = {
@@ -49,13 +51,30 @@ function Pill({ on, label }) {
   );
 }
 
-function Btn({ onClick, children, tone = "gold", disabled }) {
-  const c = tone === "danger" ? T.danger : tone === "info" ? T.info : T.gold;
+const STATUS_COLOR = {
+  draft: T.textMuted, pending_review: T.info, approved: T.gold,
+  executing: T.info, completed: T.success, failed: T.danger,
+  rejected: T.danger, cancelled: T.textMuted,
+};
+
+function StatusBadge({ status }) {
+  const c = STATUS_COLOR[status] || T.textMuted;
   return (
-    <button onClick={onClick} disabled={disabled} style={{
+    <span style={{
+      fontSize: "0.6rem", fontFamily: "JetBrains Mono, monospace", padding: "2px 8px",
+      borderRadius: 10, background: `${c}22`, color: c, border: `1px solid ${c}55`,
+      textTransform: "uppercase", letterSpacing: 0.5,
+    }}>{(status || "?").replace("_", " ")}</span>
+  );
+}
+
+function Btn({ onClick, children, tone = "gold", disabled, title }) {
+  const c = tone === "danger" ? T.danger : tone === "info" ? T.info : tone === "success" ? T.success : T.gold;
+  return (
+    <button onClick={onClick} disabled={disabled} title={title} style={{
       background: "transparent", color: c, border: `1px solid ${c}66`,
-      borderRadius: 4, padding: "6px 12px", fontSize: "0.72rem", cursor: disabled ? "not-allowed" : "pointer",
-      fontFamily: "JetBrains Mono, monospace", marginRight: 8, opacity: disabled ? 0.4 : 1,
+      borderRadius: 4, padding: "5px 10px", fontSize: "0.68rem", cursor: disabled ? "not-allowed" : "pointer",
+      fontFamily: "JetBrains Mono, monospace", marginRight: 6, marginTop: 4, opacity: disabled ? 0.4 : 1,
     }}>{children}</button>
   );
 }
@@ -68,6 +87,8 @@ export default function KosinePage() {
   const [scan, setScan] = useState(null);
   const [audit, setAudit] = useState([]);
   const [backups, setBackups] = useState([]);
+  const [suggestions, setSuggestions] = useState([]);
+  const [sugResult, setSugResult] = useState({});   // code -> {kind, data}
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState("");
 
@@ -76,9 +97,12 @@ export default function KosinePage() {
       const s = await fetchKosineStatus();
       setStatus(s);
       if (s.enabled) {
-        const [a, b] = await Promise.all([fetchKosineAudit(20), fetchKosineBackups()]);
+        const [a, b, sg] = await Promise.all([
+          fetchKosineAudit(20), fetchKosineBackups(), fetchKosineSuggestions(50),
+        ]);
         setAudit(a.records || []);
         setBackups(b.backups || []);
+        setSuggestions(sg.suggestions || []);
       }
     } catch (e) { setMsg(String(e.message || e)); }
   }, []);
@@ -119,7 +143,34 @@ export default function KosinePage() {
     finally { setBusy(""); }
   };
 
+  // ── suggestion actions (state via WorkflowEngine; execution via /apply) ──────
+  const runSug = async (code, kind, fn) => {
+    setBusy(`${kind}:${code}`); setMsg("");
+    try {
+      const r = await fn();
+      if (kind === "dryrun") {
+        setSugResult((m) => ({ ...m, [code]: { kind: "dryrun", data: r } }));
+      } else if (kind === "apply") {
+        setSugResult((m) => ({ ...m, [code]: { kind: "apply", data: r } }));
+        setMsg(r.ok ? `Applied ${code} → ${r.status}.` : `Apply ${code} failed: ${r.error}`);
+      } else if (!r.ok && r.error) {
+        setMsg(`${code}: ${r.error}`);
+      }
+      await refresh();
+    } catch (e) { setMsg(String(e.message || e)); }
+    finally { setBusy(""); }
+  };
+  const onSubmit  = (code) => runSug(code, "submit",  () => kosineSubmitSuggestion(code));
+  const onApprove = (code) => runSug(code, "approve", () => kosineApproveSuggestion(code));
+  const onReject  = (code) => runSug(code, "reject",  () => kosineRejectSuggestion(code));
+  const onDryRun  = (code) => runSug(code, "dryrun",  () => kosineApplySuggestion(code, { dry_run: true }));
+  const onApply   = (code) => {
+    if (!window.confirm(`Apply ${code} to KOSINE? This performs a real, audited write.`)) return;
+    return runSug(code, "apply", () => kosineApplySuggestion(code, { approve: true }));
+  };
+
   const st = status || {};
+  const writesOff = !st.writes_allowed;
 
   return (
     <div style={{ background: T.bg, minHeight: "100vh", color: T.text, padding: "20px 24px", fontFamily: "Inter, system-ui, sans-serif" }}>
@@ -199,6 +250,70 @@ export default function KosinePage() {
                 ))}
               </div>
             )}
+          </Panel>
+
+          <Panel title="Suggestions (approval-gated apply)">
+            {writesOff && (
+              <div style={{ fontSize: "0.68rem", color: T.warning, marginBottom: 10 }}>
+                Real apply is disabled — <code>KOSINE_ALLOW_WRITES=false</code>. Dry-run still works;
+                set the flag and restart the backend to enable writes.
+              </div>
+            )}
+            {suggestions.length === 0 ? (
+              <div style={{ fontSize: "0.75rem", color: T.textMuted }}>
+                No suggestions yet. Run “Draft suggestions” above (requires autodraft).
+              </div>
+            ) : suggestions.map((s) => {
+              const status = s.status;
+              const terminal = ["completed", "failed", "rejected", "cancelled"].includes(status);
+              const isBusy = busy.endsWith(`:${s.code}`);
+              const res = sugResult[s.code];
+              return (
+                <div key={s.code} style={{ padding: "8px 0", borderBottom: `1px solid ${T.border}` }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ color: T.gold, fontFamily: "JetBrains Mono, monospace", fontSize: "0.72rem", minWidth: 62 }}>{s.code}</span>
+                    <StatusBadge status={status} />
+                    <span style={{ color: T.text, fontSize: "0.74rem" }}>{s.title}</span>
+                    <span style={{ color: T.textMuted, fontSize: "0.62rem", marginLeft: "auto", fontFamily: "JetBrains Mono, monospace" }}>
+                      {s.tool_name}
+                    </span>
+                  </div>
+                  {s.description && <div style={{ fontSize: "0.66rem", color: T.textMuted, marginTop: 3 }}>{s.description}</div>}
+
+                  {!terminal && (
+                    <div style={{ marginTop: 4 }}>
+                      {status === "draft" && <Btn onClick={() => onSubmit(s.code)} disabled={isBusy}>Submit for review</Btn>}
+                      {(status === "draft" || status === "pending_review") && (
+                        <>
+                          <Btn onClick={() => onApprove(s.code)} disabled={isBusy}>Approve</Btn>
+                          <Btn onClick={() => onReject(s.code)} tone="danger" disabled={isBusy}>Reject</Btn>
+                        </>
+                      )}
+                      {status === "approved" && <Btn onClick={() => onDryRun(s.code)} tone="info" disabled={isBusy}>Dry run apply</Btn>}
+                      <Btn
+                        onClick={() => onApply(s.code)}
+                        tone="success"
+                        disabled={isBusy || writesOff}
+                        title={writesOff ? "KOSINE_ALLOW_WRITES=false" : "Approve then apply (real write)"}
+                      >Approve &amp; apply</Btn>
+                    </div>
+                  )}
+
+                  {res?.kind === "dryrun" && res.data?.ok && (
+                    <div style={{ marginTop: 5, fontSize: "0.64rem", fontFamily: "JetBrains Mono, monospace", color: T.info, background: T.surfaceHi, borderRadius: 4, padding: "5px 8px" }}>
+                      DRY-RUN — would call <b>{res.data.would_apply?.tool}</b>({JSON.stringify(res.data.would_apply?.args)})
+                    </div>
+                  )}
+                  {res?.kind === "apply" && (
+                    <div style={{ marginTop: 5, fontSize: "0.64rem", fontFamily: "JetBrains Mono, monospace", color: res.data?.ok ? T.success : T.danger, background: T.surfaceHi, borderRadius: 4, padding: "5px 8px" }}>
+                      {res.data?.ok
+                        ? `APPLIED → ${res.data.status} (see audit log below)`
+                        : `FAILED — ${res.data?.error}`}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </Panel>
 
           <Panel title="Write Audit Log">

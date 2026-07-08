@@ -1371,3 +1371,27 @@ export async function kosineMaintenanceRun(draft = false) {
     body: JSON.stringify({ draft }),
   }));
 }
+
+export async function fetchKosineSuggestions(limit = 50) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/suggestions?limit=${limit}`));
+}
+
+export async function kosineApplySuggestion(code, { approve = false, dry_run = false } = {}) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/suggestions/${encodeURIComponent(code)}/apply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ approve, dry_run }),
+  }));
+}
+
+export async function kosineSubmitSuggestion(code) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/suggestions/${encodeURIComponent(code)}/submit`, { method: "POST" }));
+}
+
+export async function kosineApproveSuggestion(code) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/suggestions/${encodeURIComponent(code)}/approve`, { method: "POST" }));
+}
+
+export async function kosineRejectSuggestion(code) {
+  return readJson(await _apiFetch(`${API_BASE}/kosine/suggestions/${encodeURIComponent(code)}/reject`, { method: "POST" }));
+}
