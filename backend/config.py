@@ -36,7 +36,7 @@ API_KEY = os.getenv("API_KEY", "")
 # Brain63 — Obsidian vault path (READ-ONLY knowledge source for SILVIA)
 BRAIN63_VAULT_PATH = os.getenv(
     "BRAIN63_VAULT_PATH",
-    r"C:\Users\IshaanV\Documents\GitHub\Brain63",
+    "",
 )
 BRAIN_STEWARD_AUTODRAFT = os.getenv("BRAIN_STEWARD_AUTODRAFT", "false").lower() in ("true", "1", "yes")
 
@@ -56,7 +56,7 @@ BRAIN_STEWARD_AUTODRAFT = os.getenv("BRAIN_STEWARD_AUTODRAFT", "false").lower() 
 #   KOSINE_MAINTENANCE_AUTODRAFT — let the maintenance loop auto-draft suggestion workflows
 KOSINE_ENABLED = os.getenv("KOSINE_ENABLED", "false").lower() in ("true", "1", "yes")
 KOSINE_PRIMARY = os.getenv("KOSINE_PRIMARY", "false").lower() in ("true", "1", "yes")
-KOSINE_REPO_PATH = os.getenv("KOSINE_REPO_PATH", r"C:\Users\IshaanV\Documents\GitHub\KOS")
+KOSINE_REPO_PATH = os.getenv("KOSINE_REPO_PATH", "")
 KOSINE_DB_PATH = os.getenv(
     "KOSINE_DB_PATH",
     str(Path(KOSINE_REPO_PATH) / "kosine.db"),

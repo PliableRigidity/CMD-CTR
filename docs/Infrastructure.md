@@ -26,7 +26,7 @@ SILVIA treats every machine on your network — servers, Raspberry Pis, drones, 
 
 ```
 ┌─────────────┐          ┌─────────────────────────┐
-│   SILVIA    │ ────────▶│  Node: nighthawk (NAS)  │
+│   SILVIA    │ ────────▶│  Node: storage-node (NAS)  │
 │  Backend    │◀──────── │  silvia-agent :7700      │
 └─────────────┘  REST    │  CPU: 12%  RAM: 4.2GB   │
                          └─────────────────────────┘
@@ -46,7 +46,7 @@ SILVIA treats every machine on your network — servers, Raspberry Pis, drones, 
 | Field | Type | Description |
 |---|---|---|
 | `id` | string | UUID short hash |
-| `name` | string | Friendly name (e.g. "nighthawk") |
+| `name` | string | Friendly name (e.g. "storage-node") |
 | `hostname` | string | IP address or hostname |
 | `type` | string | drone, robot, server, workstation, sbc, esp32, sensor-network, vps |
 | `status` | string | online, offline, unknown |
@@ -117,7 +117,7 @@ SILVIA broadcasts telemetry updates as WebSocket events:
 {
   "type": "node_telemetry",
   "node_id": "abc123",
-  "node_name": "nighthawk",
+  "node_name": "storage-node",
   "cpu": 34.2,
   "ram": 67.1,
   "disk": 45.0,
@@ -215,9 +215,9 @@ SILVIA can open a Windows Terminal tab connected to any registered node via SSH.
 
 ### How It Works
 
-1. You say `connect carrera` or type it in chat
-2. SILVIA looks up `carrera` in the node registry → finds hostname and stored SSH profile
-3. SILVIA runs: `wt.exe new-tab --title "SILVIA: carrera" ssh ishaan@192.168.1.50`
+1. You say `connect remote-server` or type it in chat
+2. SILVIA looks up `remote-server` in the node registry → finds hostname and stored SSH profile
+3. SILVIA runs: `wt.exe new-tab --title "SILVIA: remote-server" ssh user@192.168.1.50`
 4. A new Windows Terminal tab opens with the SSH session
 
 ### SSH Profiles
@@ -225,9 +225,9 @@ SILVIA can open a Windows Terminal tab connected to any registered node via SSH.
 Store username and key per node:
 
 ```
-set ssh username for carrera to ishaan
-configure nighthawk ssh as pi
-set carrera ssh key to ~/.ssh/id_ed25519
+set ssh username for remote-server to user
+configure storage-node ssh as pi
+set remote-server ssh key to ~/.ssh/id_ed25519
 ```
 
 Profiles are stored in the node record (`ssh_username`, `ssh_key_path`). If no profile is stored, SILVIA will ask for a username on first connect.
@@ -294,18 +294,18 @@ SILVIA will always show a confirmation prompt: "Are you sure you want to [comman
 |---|---|
 | `what nodes are online` | List all registered nodes with status |
 | `list my devices` | Same as above |
-| `status of nighthawk` | Detailed info for a specific node |
-| `nighthawk info` | Same as above |
-| `ping nighthawk` | Check if nighthawk is reachable |
-| `is nighthawk online` | Same as ping |
-| `what's the IP of nighthawk` | Return stored IP/hostname |
+| `status of storage-node` | Detailed info for a specific node |
+| `storage-node info` | Same as above |
+| `ping storage-node` | Check if storage-node is reachable |
+| `is storage-node online` | Same as ping |
+| `what's the IP of storage-node` | Return stored IP/hostname |
 
 ### Node Telemetry
 
 | Command | Action |
 |---|---|
-| `show nighthawk telemetry` | CPU, RAM, disk, temperature for nighthawk |
-| `nighthawk cpu` | Telemetry for nighthawk (any metric keyword) |
+| `show storage-node telemetry` | CPU, RAM, disk, temperature for storage-node |
+| `storage-node cpu` | Telemetry for storage-node (any metric keyword) |
 | `show all node telemetry` | Telemetry for every registered node |
 | `infrastructure status` | Same — overview of all nodes |
 | `show hottest node` | All nodes sorted by temperature |
@@ -317,11 +317,11 @@ SILVIA will always show a confirmation prompt: "Are you sure you want to [comman
 |---|---|
 | `add laptop` | Register a new node named "laptop" |
 | `register server1 at 192.168.1.10` | Register with specific hostname |
-| `update nighthawk IP to 192.168.1.50` | Update stored hostname |
-| `delete nighthawk` | Remove from registry |
-| `merge VPS into carrera` | Merge duplicate nodes (source deleted) |
+| `update storage-node IP to 192.168.1.50` | Update stored hostname |
+| `delete storage-node` | Remove from registry |
+| `merge VPS into remote-server` | Merge duplicate nodes (source deleted) |
 | `deduplicate nodes` | Find and report duplicate entries |
-| `verify nighthawk` | Run full verification chain |
+| `verify storage-node` | Run full verification chain |
 | `verify all nodes` | Verify every node |
 | `refresh nodes` | Same as verify all |
 
@@ -329,12 +329,12 @@ SILVIA will always show a confirmation prompt: "Are you sure you want to [comman
 
 | Command | Action |
 |---|---|
-| `connect carrera` | Open SSH terminal tab to carrera |
-| `ssh into nighthawk` | Open SSH terminal tab |
-| `connect nighthawk as admin` | SSH with explicit username |
-| `set ssh username for carrera to ishaan` | Save SSH username |
-| `configure nighthawk ssh as pi` | Save SSH username |
-| `set carrera ssh key to ~/.ssh/id_ed25519` | Save SSH key path |
+| `connect remote-server` | Open SSH terminal tab to remote-server |
+| `ssh into storage-node` | Open SSH terminal tab |
+| `connect storage-node as admin` | SSH with explicit username |
+| `set ssh username for remote-server to user` | Save SSH username |
+| `configure storage-node ssh as pi` | Save SSH username |
+| `set remote-server ssh key to ~/.ssh/id_ed25519` | Save SSH key path |
 
 ### Node Commands (requires silvia-agent)
 

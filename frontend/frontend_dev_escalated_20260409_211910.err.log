@@ -1,9 +1,0 @@
-[2m11:16:26 pm[22m [31m[1m[vite][22m[39m [31merror while updating dependencies:
-Error: ENOENT: no such file or directory, open 'C:\Users\IshaanV\Documents\GitHub\Assistant\frontend\node_modules\mapbox-gl\dist\mapbox-gl.js'
-    at async open (node:internal/fs/promises:641:25)
-    at async Object.readFile (node:internal/fs/promises:1245:14)
-    at async extractExportsData (file:///C:/Users/IshaanV/Documents/GitHub/Assistant/frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:51156:24)
-    at async file:///C:/Users/IshaanV/Documents/GitHub/Assistant/frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:50904:27
-    at async Promise.all (index 6)
-    at async prepareEsbuildOptimizerRun (file:///C:/Users/IshaanV/Documents/GitHub/Assistant/frontend/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:50901:3)[39m
-^C

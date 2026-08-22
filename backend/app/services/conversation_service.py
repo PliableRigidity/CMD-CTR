@@ -149,10 +149,10 @@ _MY_PROJECTS_RE = re.compile(
 # ---------------------------------------------------------------------------
 
 # Pattern: all known entity names (devices + projects). Word-boundary aware.
-_ENTITY_PAT = r"(?:nighthawk|cyberdeck|drone[\s\-]?hive|koi|brain[\s\-]?63|silvia|cmd[\s\-]?ctr|university)"
+_ENTITY_PAT = r"(?:storage-node|cyberdeck|drone[\s\-]?hive|koi|brain[\s\-]?63|silvia|cmd[\s\-]?ctr|university)"
 
 # Device hardware/sensor property queries
-# "what sensors does nighthawk have?", "does nighthawk have a camera?", "nighthawk hardware"
+# "what sensors does storage-node have?", "does storage-node have a camera?", "storage-node hardware"
 _DEVICE_PROP_RE = re.compile(
     rf"(?:"
     rf"what\s+(?:sensors?|camera|hardware|specs?|equipment|features?|capabilities?|components?)\s+"
@@ -177,7 +177,7 @@ _PROJECT_STATUS_RE = re.compile(
     re.I,
 )
 
-# General entity info: "what is nighthawk?", "tell me about cyberdeck", "describe droneHive"
+# General entity info: "what is storage-node?", "tell me about cyberdeck", "describe droneHive"
 _ENTITY_INFO_RE = re.compile(
     rf"(?:"
     rf"what\s+(?:is|are)\s+({_ENTITY_PAT})"
@@ -347,7 +347,7 @@ _WAKE_RESET_RE = re.compile(
 
 # User correction: "[entity] is just a Pi NAS" / "[entity] doesn't have a camera"
 # Only fires on correction indicators (just/only/actually/doesn't/has no) so
-# "nighthawk is online" (state assertion) is NOT caught here.
+# "storage-node is online" (state assertion) is NOT caught here.
 _USER_CORRECTION_RE = re.compile(
     rf"^(?:"
     rf"({_ENTITY_PAT})\s+is\s+(?:just|only|actually|really)\s+(.+)"
@@ -379,7 +379,7 @@ _ROADMAP_QUERY_RE = re.compile(
 # Broad entity mention detection — catches project names in ANY conversational context,
 # not just explicit status/info queries. Used to pre-fetch Brain63 context for the LLM.
 _ENTITY_DETECT_RE = re.compile(
-    r"\b(?:nighthawk|cyberdeck|drone[\s\-]?hive|koi|brain[\s\-]?63|silvia|cmd[\s\-]?ctr|artoo|magi|fpv|university)\b",
+    r"\b(?:storage-node|cyberdeck|drone[\s\-]?hive|koi|brain[\s\-]?63|silvia|cmd[\s\-]?ctr|artoo|magi|fpv|university)\b",
     re.I,
 )
 
@@ -625,7 +625,7 @@ class ConversationService:
 
         # ── Entity registry interceptors ───────────────────────────────────────
         # Device/project queries must come from the registry, not the LLM.
-        # These run before the social engine — short queries like 'what is nighthawk'
+        # These run before the social engine — short queries like 'what is storage-node'
         # would otherwise be absorbed by the ambiguous-social bucket.
         _correction_resp = self._handle_user_correction(_raw_q)
         if _correction_resp is not None:
@@ -1672,7 +1672,7 @@ class ConversationService:
                 if not capability:
                     return self._simple_response(
                         "Capability",
-                        "Specify a capability to execute, e.g. 'play music on nighthawk'.",
+                        "Specify a capability to execute, e.g. 'play music on storage-node'.",
                     )
                 # Check if this capability requires confirmation (risk = high/critical)
                 from backend.app.services.service_registry import ServiceRegistry
@@ -2210,7 +2210,7 @@ class ConversationService:
                 if not node_name or not preset_name:
                     return self._simple_response(
                         "Register Preset",
-                        "Specify a node and preset name. Try: 'register nighthawk as NAS' or 'configure pi-zero as media-player'.",
+                        "Specify a node and preset name. Try: 'register storage-node as NAS' or 'configure pi-zero as media-player'.",
                     )
                 await self._emit_tool("[TOOL] register_node_preset", f"{preset_name} → {node_name}")
                 from backend.app.tools.service_tool import register_node_preset as _reg_preset
@@ -2260,7 +2260,7 @@ class ConversationService:
                 if not node_name or not service_name:
                     return self._simple_response(
                         "Add Service",
-                        "Specify a node and service name. Try: 'add samba service to nighthawk'.",
+                        "Specify a node and service name. Try: 'add samba service to storage-node'.",
                     )
                 await self._emit_tool("[TOOL] add_node_service", f"{service_name} → {node_name}")
                 from backend.app.tools.service_tool import add_node_service as _add_svc
@@ -2297,7 +2297,7 @@ class ConversationService:
                 if not node_name or not service_name:
                     return self._simple_response(
                         "Remove Service",
-                        "Specify a node and service name. Try: 'remove samba service from nighthawk'.",
+                        "Specify a node and service name. Try: 'remove samba service from storage-node'.",
                     )
                 await self._emit_tool("[TOOL] remove_node_service", f"{service_name} from {node_name}")
                 from backend.app.tools.service_tool import remove_node_service as _rm_svc
@@ -2322,7 +2322,7 @@ class ConversationService:
                 if not old_name or not new_name:
                     return self._simple_response(
                         "Rename Service",
-                        "Specify old and new names. Try: 'rename service samba to file-sharing on nighthawk'.",
+                        "Specify old and new names. Try: 'rename service samba to file-sharing on storage-node'.",
                     )
                 if not node_name:
                     return self._simple_response(
@@ -3733,7 +3733,7 @@ class ConversationService:
         if m:
             project_raw = m.group("project").strip()
 
-            # Split compound intents: "nighthawk, open the ssh terminal"
+            # Split compound intents: "storage-node, open the ssh terminal"
             compound = self._COMPOUND_ACTION_RE.match(project_raw)
             if compound:
                 project = re.sub(r"\s+today$", "", compound.group("target").strip().rstrip(","), flags=re.I)
@@ -4478,8 +4478,8 @@ class ConversationService:
     def _handle_user_correction(self, raw: str) -> AssistantResponse | None:
         """Detect and store user corrections about known entities.
 
-        'Nighthawk is just a Pi NAS' → stored; 'nighthawk doesn't have a camera' → stored.
-        Does NOT fire on 'nighthawk is online' (state assertions are handled separately).
+        'Storage Node is just a Pi NAS' → stored; 'storage-node doesn't have a camera' → stored.
+        Does NOT fire on 'storage-node is online' (state assertions are handled separately).
         """
         m = _USER_CORRECTION_RE.match(raw)
         if not m:
@@ -4979,7 +4979,7 @@ class ConversationService:
             if _YES_RE.match(raw) and suggestion.get("action") == "telemetry":
                 return await self._run_tool("get_node_telemetry", {"node": suggestion["node"]})
 
-        # Statement-intent: "I'm pretty sure nighthawk is online" → verify it
+        # Statement-intent: "I'm pretty sure storage-node is online" → verify it
         # now instead of replying with an empty acknowledgement.
         assertion = _NODE_ASSERTION_RE.match(raw)
         if assertion:

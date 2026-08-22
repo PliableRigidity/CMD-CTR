@@ -41,7 +41,7 @@ Register → Probe → Verify → Monitor → Command
 ```python
 class Node:
     id: str                  # UUID short hash (e.g. "abc123de")
-    name: str                # Friendly name: "nighthawk", "pi5", "drone-01"
+    name: str                # Friendly name: "storage-node", "pi5", "drone-01"
     hostname: str            # IP address or DNS hostname
     type: str                # See Node Types below
     status: str              # "online" | "offline" | "unknown"
@@ -88,8 +88,8 @@ class Node:
 ### Via Chat
 
 ```
-add nighthawk
-register nighthawk at 192.168.1.50
+add storage-node
+register storage-node at 192.168.1.50
 add server1 at 100.64.1.5
 ```
 
@@ -108,7 +108,7 @@ If you omit the hostname, SILVIA will ask for it.
 curl -X POST http://localhost:8000/api/nodes \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "nighthawk",
+    "name": "storage-node",
     "hostname": "192.168.1.50",
     "type": "server",
     "agent_url": "http://192.168.1.50:7700"
@@ -143,7 +143,7 @@ Set up by configuring `agent_url` on the node record. SILVIA will attempt the ag
 SILVIA expects these endpoints on the agent:
 
 ```
-GET  /health          → {"ok": true, "name": "nighthawk", "version": "1.0"}
+GET  /health          → {"ok": true, "name": "storage-node", "version": "1.0"}
 GET  /metrics         → {"cpu": 34.2, "ram": 67.1, "disk": 45.0, "temp": 52.3}
 POST /command         → body: {"command": "land", "payload": {}}
                      ← {"ok": true, "result": "..."}
@@ -169,7 +169,7 @@ SILVIA uses a 4-step verification chain to confirm a node is reachable:
 
 **Trigger verification:**
 ```
-verify nighthawk          # verify one node
+verify storage-node          # verify one node
 verify all nodes          # verify all
 refresh nodes             # same as verify all
 ```
@@ -185,29 +185,29 @@ SSH profile is stored per node in the registry.
 ### Setting a Profile
 
 ```
-set ssh username for carrera to ishaan
-configure nighthawk ssh as pi
-set carrera ssh key to ~/.ssh/id_ed25519
-set carrera ssh key to default
+set ssh username for remote-server to user
+configure storage-node ssh as pi
+set remote-server ssh key to ~/.ssh/id_ed25519
+set remote-server ssh key to default
 ```
 
 ### Using SSH
 
 ```
-connect carrera
-ssh into nighthawk
+connect remote-server
+ssh into storage-node
 connect to server1
-ssh nighthawk as admin
+ssh storage-node as admin
 open terminal on pi5
 ```
 
 SILVIA opens a new Windows Terminal tab running:
 ```
-ssh ishaan@192.168.1.50
+ssh user@192.168.1.50
 ```
 or with a key:
 ```
-ssh -i ~/.ssh/id_ed25519 ishaan@192.168.1.50
+ssh -i ~/.ssh/id_ed25519 user@192.168.1.50
 ```
 
 **Requirements:** Windows Terminal (`wt.exe`) must be installed.
@@ -219,8 +219,8 @@ ssh -i ~/.ssh/id_ed25519 ishaan@192.168.1.50
 Telemetry is received from silvia-agent and stored on the node record. The most recent values are available immediately:
 
 ```
-show nighthawk telemetry
-nighthawk cpu
+show storage-node telemetry
+storage-node cpu
 show all node telemetry
 infrastructure status
 ```
@@ -249,10 +249,10 @@ Returns chronological array:
 
 ```
 add laptop
-register nighthawk at 192.168.1.50
-update nighthawk IP to 192.168.1.51
-delete nighthawk
-merge VPS into carrera
+register storage-node at 192.168.1.50
+update storage-node IP to 192.168.1.51
+delete storage-node
+merge VPS into remote-server
 deduplicate nodes
 ```
 
@@ -261,12 +261,12 @@ deduplicate nodes
 ```
 what nodes are online
 list my devices
-status of nighthawk
-nighthawk info
-ping nighthawk
-is nighthawk online
-what's the IP of nighthawk
-verify nighthawk
+status of storage-node
+storage-node info
+ping storage-node
+is storage-node online
+what's the IP of storage-node
+verify storage-node
 verify all nodes
 refresh nodes
 ```
@@ -274,7 +274,7 @@ refresh nodes
 ### Telemetry
 
 ```
-show nighthawk telemetry
+show storage-node telemetry
 workstation cpu
 show all node telemetry
 show hottest node
@@ -287,14 +287,14 @@ drone-01 mission state
 ### SSH
 
 ```
-connect carrera
-ssh into nighthawk
+connect remote-server
+ssh into storage-node
 connect to server1
-ssh nighthawk as admin
-open terminal on nighthawk
-set ssh username for carrera to ishaan
-configure nighthawk ssh as pi
-set carrera ssh key to ~/.ssh/id_ed25519
+ssh storage-node as admin
+open terminal on storage-node
+set ssh username for remote-server to user
+configure storage-node ssh as pi
+set remote-server ssh key to ~/.ssh/id_ed25519
 ```
 
 ### Commands (requires silvia-agent)

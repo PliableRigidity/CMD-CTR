@@ -40,7 +40,7 @@ inside the system, or like a web service answering a ticket?
 The core policy change: **statements are intents, not just prompts.**
 
 - A question gets an answer that leads with the answer.
-- A statement about system state ("I'm pretty sure Nighthawk is online")
+- A statement about system state ("I'm pretty sure Storage Node is online")
   gets **verified, not acknowledged**. SILVIA probes the node and reports
   the actual result.
 - A command gets executed and confirmed in natural language ("Spotify is
@@ -148,20 +148,20 @@ The two legal moves:
 1. **The facts are already in front of her** (tool already ran, history
    contains it) → use them.
 2. **They aren't** → name the exact command that gets them: "Say `ping
-   nighthawk` and I'll probe it." Real instructions, not fake effort.
+   storage-node` and I'll probe it." Real instructions, not fake effort.
 
 **Deterministic enforcement, not just prompt hope.** The worst offender —
-"I'm pretty sure Nighthawk is online" → "I'll investigate that" → nothing —
+"I'm pretty sure Storage Node is online" → "I'll investigate that" → nothing —
 is now intercepted *before* the LLM ever sees it. `_NODE_ASSERTION_RE` in
 `conversation_service.py` matches assertion phrasing ("I'm pretty sure / I
 think / I suspect / I bet … X is online/offline/up/down/…"). If the named node
 exists in the registry, SILVIA **actually probes it** and answers from the
 result:
 
-- Assertion confirmed: "You were right — Nighthawk is online, responding in
+- Assertion confirmed: "You were right — Storage Node is online, responding in
   19 milliseconds."
-- Assertion contradicted: "I checked — Nighthawk isn't answering a probe right
-  now. It could still be up with ICMP blocked; `verify nighthawk` runs the
+- Assertion contradicted: "I checked — Storage Node isn't answering a probe right
+  now. It could still be up with ICMP blocked; `verify storage-node` runs the
   full chain."
 
 Names not in the registry fall through to normal chat — SILVIA never probes
@@ -181,7 +181,7 @@ costs nothing.
 |---|---|
 | `Opened https://open.spotify.com` | "Spotify is open." |
 | `Launched code.exe` | "VS Code is up." |
-| `Node online, latency 19ms` | "Nighthawk is online, responding in 19 milliseconds." |
+| `Node online, latency 19ms` | "Storage Node is online, responding in 19 milliseconds." |
 | `30.48°C, broken clouds, wind 11 km/h` | "It's around 30°C with broken cloud cover and a light breeze." |
 
 Implementation:
@@ -260,9 +260,9 @@ tone system — only the delivery changes.
 > After: "Spotify is open."
 
 **Node assertion (the signature interaction)**
-> User: "I'm pretty sure Nighthawk is online."
+> User: "I'm pretty sure Storage Node is online."
 > Before: "I'll investigate that." *(nothing happens)*
-> After: *(real ICMP probe runs)* "You were right — Nighthawk is online,
+> After: *(real ICMP probe runs)* "You were right — Storage Node is online,
 > responding in 19 milliseconds. Want telemetry as well?"
 > User: "yes"
 > After: *(telemetry tool actually runs)* full telemetry readout.
@@ -364,7 +364,7 @@ planner or web search — the definition of chatbot behavior.
 `detect_opener()` classifies these **deterministically** (regex, no LLM
 guessing) and routing in both `handle()` and `handle_stream()` sends them
 straight to conversational generation, **bypassing Hermes, the planner, and
-web search entirely**. ("I think Nighthawk is online" remains a special case:
+web search entirely**. ("I think Storage Node is online" remains a special case:
 it's a verifiable claim, so the node-assertion probe — which runs earlier —
 verifies it with a real tool. Talk gets conversation; claims get verification.)
 
@@ -389,7 +389,7 @@ Goals compose with the tone system — serious-mode detection still wins
 CONVERSATION FIRST rule: when the user is just talking, talk with them —
 never volunteer system status, node activity, diagnostics, or project
 reports unless asked. Social detection is full-match ("yo yo yo what up
-gangg" is social; "hey, ping nighthawk" is not), and **social turns are
+gangg" is social; "hey, ping storage-node" is not), and **social turns are
 generated with no operational context at all** — semantic-memory enrichment
 and the open-threads block are withheld, because injected operational
 context is what pulls small models toward status-report replies to "hi".

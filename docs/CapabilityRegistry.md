@@ -20,7 +20,7 @@ Capabilities are named, executable actions that services expose. SILVIA can exec
 The capability hierarchy is:
 
 ```
-Node (nighthawk)
+Node (storage-node)
   └── Service (plex)             ← ServiceRegistry
         └── Capability: media.play   ← CapabilityRegistry
         └── Capability: media.pause
@@ -118,17 +118,17 @@ Capabilities use a dot-namespace: `<category>.<action>`. The category maps to a 
 ### Via Chat
 
 ```
-play music on nighthawk
+play music on storage-node
 pause music
-skip track on nighthawk
+skip track on storage-node
 stop the music
-set volume to 50 on nighthawk
+set volume to 50 on storage-node
 move drone-01 forward
 stop rover
 take a photo on pi5
 start camera stream on pi5
-restart nginx on carrera
-start mysql on nighthawk
+restart nginx on remote-server
+start mysql on storage-node
 read sensor on esp32-01
 battery status on drone-01
 ```
@@ -148,7 +148,7 @@ curl -X POST http://localhost:8000/api/capabilities/execute \
   -H "Content-Type: application/json" \
   -d '{
     "capability": "media.play",
-    "node": "nighthawk",
+    "node": "storage-node",
     "args": {}
   }'
 ```
@@ -168,7 +168,7 @@ Capabilities have a risk level. High and critical capabilities require explicit 
 
 When confirmation is required, SILVIA will ask:
 ```
-About to execute [system.restart] on [carrera]. Confirm?
+About to execute [system.restart] on [remote-server]. Confirm?
 ```
 
 ---
@@ -177,21 +177,21 @@ About to execute [system.restart] on [carrera]. Confirm?
 
 ```
 # Execute capabilities
-play music on nighthawk
+play music on storage-node
 pause music
-skip track on nighthawk
+skip track on storage-node
 stop the music
-set volume to 50 on nighthawk
+set volume to 50 on storage-node
 move drone-01 forward
 move backward
 stop rover
 take a photo on pi5
 start camera stream on pi5
 stop stream on pi5
-restart nginx on carrera
-start mysql on nighthawk
-stop mysql on nighthawk
-check nginx status on carrera
+restart nginx on remote-server
+start mysql on storage-node
+stop mysql on storage-node
+check nginx status on remote-server
 read sensor on esp32-01
 calibrate sensor on esp32-01
 battery status on drone-01
@@ -199,7 +199,7 @@ set gpio pin 4 high on esp32-01
 read gpio pin 4 on esp32-01
 navigate drone-01 home
 go to waypoint 1
-audio volume 70 on nighthawk
+audio volume 70 on storage-node
 ```
 
 ---

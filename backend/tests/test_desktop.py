@@ -295,15 +295,15 @@ def test_planner_regex_find_pcb():
 
 
 # ---------------------------------------------------------------------------
-# Test 22: Planner regex — find files related to nighthawk
+# Test 22: Planner regex — find files related to storage-node
 # ---------------------------------------------------------------------------
 
 def test_planner_regex_find_query():
     from backend.app.tools.planner import _regex_fallback
-    result = _regex_fallback("find files related to nighthawk")
+    result = _regex_fallback("find files related to storage-node")
     assert result["action"] == "call_tool"
     assert result["name"] == "find_files"
-    assert "nighthawk" in result["args"]["query"].lower()
+    assert "storage-node" in result["args"]["query"].lower()
 
 
 # ---------------------------------------------------------------------------

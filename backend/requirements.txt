@@ -59,7 +59,7 @@ Pillow>=10.0.0
 
 # KOSINE — structured memory backend (Phase 19). Talked to in-process via
 # kos.sdk.KOSClient. Install from the local checkout:
-#   pip install -e C:/Users/IshaanV/Documents/GitHub/KOS
+#   pip install -e C:/Users/user/Documents/GitHub/KOS
 # If not installed, backend.app.memory.kosine_client falls back to KOSINE_REPO_PATH
 # on sys.path. Only needed when KOSINE_ENABLED=true.
 # -e ../KOS

@@ -49,11 +49,11 @@ TOOLS:
 
 - get_node_ip: args {"node": string}
   Use when user asks for the IP or address of a node/device/machine.
-  Examples: "what's the IP of nighthawk", "nighthawk IP address", "address of server1"
+  Examples: "what's the IP of storage-node", "storage-node IP address", "address of server1"
 
 - ping_node: args {"node": string}
   Use when user asks to ping a node or check if it's reachable/online.
-  Examples: "ping nighthawk", "is nighthawk online", "check server1 connectivity"
+  Examples: "ping storage-node", "is storage-node online", "check server1 connectivity"
 
 - list_nodes: args {}
   Use when user asks what nodes are registered, online, or on the network.
@@ -64,7 +64,7 @@ TOOLS:
   Set node to the node name for a specific node. Set node="all" (or leave empty) for all nodes.
   Examples: "show workstation telemetry", "workstation cpu", "workstation ram", "pi5 telemetry",
             "show all node telemetry", "show hottest node", "node health", "infrastructure status",
-            "show nighthawk metrics", "workstation status", "show workstation health",
+            "show storage-node metrics", "workstation status", "show workstation health",
             "show drone-01 battery", "drone-01 mission state", "show robot telemetry"
   IMPORTANT: Always call this tool immediately — never say "I need to check the registry."
   If the data exists, display it. If it does not, explain exactly why (e.g. no agent configured).
@@ -72,7 +72,7 @@ TOOLS:
 - verify_node: args {"node": string}
   Run the full verification chain on a named node: silvia-agent → tailscale → DNS → ping.
   Updates last_verified and verification_source in the registry.
-  Examples: "verify nighthawk", "confirm pi5 is online", "check workstation connectivity", "verify server1"
+  Examples: "verify storage-node", "confirm pi5 is online", "check workstation connectivity", "verify server1"
 
 - refresh_nodes: args {}
   Verify all registered nodes using the full chain.
@@ -80,19 +80,19 @@ TOOLS:
 
 - get_node_info: args {"node": string}
   Use when user asks for network details: IP address, connectivity, probe results of a node.
-  Examples: "status of nighthawk", "nighthawk info", "what's the status of server1"
+  Examples: "status of storage-node", "storage-node info", "what's the status of server1"
 
 - update_node_ip: args {"node": string, "ip": string}
   Use when user asks to update/set a node's IP address.
-  Examples: "update nighthawk IP to 192.168.1.50", "set server1 address to 10.0.0.1"
+  Examples: "update storage-node IP to 192.168.1.50", "set server1 address to 10.0.0.1"
 
 - delete_node: args {"node": string}
   Use when user asks to delete or remove a node from the registry.
-  Examples: "delete nighthawk", "remove server1 from the registry"
+  Examples: "delete storage-node", "remove server1 from the registry"
 
 - merge_nodes: args {"source": string, "target": string}
   Use when user asks to merge, consolidate, or combine two nodes. Source is deleted; its name becomes an alias on the target.
-  Examples: "merge VPS into carrera", "consolidate nighthawk and nas", "merge pi_ai into pi-ai"
+  Examples: "merge VPS into remote-server", "consolidate storage-node and nas", "merge edge_node into edge-node"
 
 - deduplicate_nodes: args {}
   Use when user asks to find, clean up, or deduplicate the node registry.
@@ -100,18 +100,18 @@ TOOLS:
 
 - add_node: args {"node": string, "hostname": string}
   Use when user asks to add, register, or create a new node/device.
-  Examples: "add laptop", "register server1 at 192.168.1.10", "add nighthawk at 100.64.1.5"
+  Examples: "add laptop", "register server1 at 192.168.1.10", "add storage-node at 100.64.1.5"
   If no hostname given, use hostname="" and SILVIA will ask for it.
 
 - ssh_node: args {"node": string, "username": string}
   Use when user wants to SSH into a node or open a remote terminal.
-  Examples: "ssh into nighthawk", "connect to server1", "ssh nighthawk as admin"
+  Examples: "ssh into storage-node", "connect to server1", "ssh storage-node as admin"
   If no username given, use username="" — SILVIA will use the stored SSH profile or ask.
 
 - update_ssh_profile: args {"node": string, "username": string, "key_path": string}
   Use when user wants to set or change the SSH username or key for a node.
-  Examples: "set ssh username for carrera to ishaan", "configure nighthawk ssh as pi",
-            "update pi_ai ssh to use key ~/.ssh/id_ed25519", "set carrera ssh key to default"
+  Examples: "set ssh username for remote-server to user", "configure storage-node ssh as pi",
+            "update edge_node ssh to use key ~/.ssh/id_ed25519", "set remote-server ssh key to default"
   Use key_path="" if no key change requested. Use username="" if no username change requested.
 
 - get_system_specs: args {}
@@ -297,27 +297,27 @@ TOOLS:
 - list_services: args {"node": string}
   List all registered services on a node (and their capabilities).
   node is optional — omit to list all services across all nodes.
-  Examples: "show services on nighthawk", "what services does pi5 have", "list all services"
+  Examples: "show services on storage-node", "what services does pi5 have", "list all services"
 
 - register_node_preset: args {"node": string, "preset": string}
   Register a named service preset on a node. Presets: nas, media-player, robot, esp32, web-server, drone.
-  Examples: "register nighthawk as NAS", "register pi-zero as media-player", "set up drone-01 as drone",
-            "configure nighthawk as a NAS", "nighthawk should run NAS services"
+  Examples: "register storage-node as NAS", "register pi-zero as media-player", "set up drone-01 as drone",
+            "configure storage-node as a NAS", "storage-node should run NAS services"
 
 - add_node_service: args {"node": string, "service": string, "type": string, "description": string}
   Add or update a single named service on a node (upsert — safe for existing services).
   type and description are optional; leave empty if not specified.
-  Examples: "add samba service to nighthawk", "nighthawk runs file-storage", "assign media-player to pi-zero",
-            "add ssh service to carrera", "pi5 has a sensor service"
+  Examples: "add samba service to storage-node", "storage-node runs file-storage", "assign media-player to pi-zero",
+            "add ssh service to remote-server", "pi5 has a sensor service"
 
 - remove_node_service: args {"node": string, "service": string}
   Remove a named service from a node.
-  Examples: "remove samba service from nighthawk", "remove ssh from carrera", "delete media-player from pi-zero",
-            "unregister samba from nighthawk"
+  Examples: "remove samba service from storage-node", "remove ssh from remote-server", "delete media-player from pi-zero",
+            "unregister samba from storage-node"
 
 - rename_node_service: args {"node": string, "old": string, "new": string}
   Rename a service on a node.
-  Examples: "rename service samba to file-sharing on nighthawk", "rename ssh to remote-access on carrera"
+  Examples: "rename service samba to file-sharing on storage-node", "rename ssh to remote-access on remote-server"
 
 - open_location: args {"name": string}
   Open a trusted folder or project in File Explorer. name is a location name or alias.
@@ -325,7 +325,7 @@ TOOLS:
 
 - find_files: args {"query": string, "extension": string, "location": string}
   Search for files. extension is optional (stl, pdf, py, kicad_pcb, etc.). location is an optional trusted location name.
-  Examples: "find STL files", "find PCB files", "find python files in CMD-CTR", "find latest PDF", "find files related to nighthawk", "show all KiCad projects", "find STL in DroneHive"
+  Examples: "find STL files", "find PCB files", "find python files in CMD-CTR", "find latest PDF", "find files related to storage-node", "show all KiCad projects", "find STL in DroneHive"
 
 - recent_files: args {"location": string}
   Show newest files from trusted locations. location is optional.
@@ -357,7 +357,7 @@ TOOLS:
 
 - add_location: args {"name": string, "path": string, "aliases": string, "tags": string}
   Register a new trusted folder. path must be absolute.
-  Examples: "add Cyberdeck folder at C:\\Users\\IshaanV\\Documents\\GitHub\\Cyberdeck"
+  Examples: "add Cyberdeck folder at C:\\Users\\the userV\\Documents\\GitHub\\Cyberdeck"
 
 - add_app: args {"name": string, "executable": string, "aliases": string, "category": string}
   Register a new application in the app registry.
@@ -419,17 +419,17 @@ TOOLS:
   - audio: audio.play, audio.stop, audio.volume
 
   Examples:
-  "play music on nighthawk" → execute_capability with capability="media.play", node="nighthawk"
+  "play music on storage-node" → execute_capability with capability="media.play", node="storage-node"
   "pause music" → execute_capability with capability="media.pause", node=""
-  "skip track on nighthawk" → execute_capability with capability="media.next", node="nighthawk"
+  "skip track on storage-node" → execute_capability with capability="media.next", node="storage-node"
   "stop the music" → execute_capability with capability="media.stop", node=""
-  "set volume to 50 on nighthawk" → execute_capability with capability="media.volume", node="nighthawk", args={"volume": 50}
+  "set volume to 50 on storage-node" → execute_capability with capability="media.volume", node="storage-node", args={"volume": 50}
   "move drone-01 forward" → execute_capability with capability="motion.forward", node="drone-01"
   "stop rover" → execute_capability with capability="motion.stop", node="rover"
   "take a photo on pi5" → execute_capability with capability="camera.capture", node="pi5"
   "start camera stream on pi5" → execute_capability with capability="camera.stream", node="pi5"
-  "restart nginx on carrera" → execute_capability with capability="system.restart", node="carrera", args={"service": "nginx"}
-  "start mysql on nighthawk" → execute_capability with capability="system.start", node="nighthawk", args={"service": "mysql"}
+  "restart nginx on remote-server" → execute_capability with capability="system.restart", node="remote-server", args={"service": "nginx"}
+  "start mysql on storage-node" → execute_capability with capability="system.start", node="storage-node", args={"service": "mysql"}
   "read sensor on esp32-01" → execute_capability with capability="sensor.read", node="esp32-01"
   "battery status on drone-01" → execute_capability with capability="battery.status", node="drone-01"
 
@@ -984,8 +984,8 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "SPY stock"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"get_stock_price","args":{"query":"SPY"}}'},
 
-    {"role": "user",      "content": "verify nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"verify_node","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "verify storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"verify_node","args":{"node":"storage-node"}}'},
 
     {"role": "user",      "content": "confirm pi5 is online"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"verify_node","args":{"node":"pi5"}}'},
@@ -1020,8 +1020,8 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "pi5 telemetry"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"pi5"}}'},
 
-    {"role": "user",      "content": "show nighthawk metrics"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "show storage-node metrics"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"storage-node"}}'},
 
     {"role": "user",      "content": "show all node telemetry"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_telemetry","args":{"node":"all"}}'},
@@ -1050,17 +1050,17 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "volume up"},
     {"role": "assistant", "content": '{"action":"final"}'},
 
-    {"role": "user",      "content": "what's the IP of nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_ip","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "what's the IP of storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_ip","args":{"node":"storage-node"}}'},
 
-    {"role": "user",      "content": "nighthawk IP address"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_ip","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "storage-node IP address"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_ip","args":{"node":"storage-node"}}'},
 
-    {"role": "user",      "content": "ping nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"ping_node","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "ping storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"ping_node","args":{"node":"storage-node"}}'},
 
-    {"role": "user",      "content": "is nighthawk online"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"ping_node","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "is storage-node online"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"ping_node","args":{"node":"storage-node"}}'},
 
     {"role": "user",      "content": "what nodes are online"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"list_nodes","args":{}}'},
@@ -1068,20 +1068,20 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "list my devices"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"list_nodes","args":{}}'},
 
-    {"role": "user",      "content": "status of nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_info","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "status of storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"get_node_info","args":{"node":"storage-node"}}'},
 
-    {"role": "user",      "content": "update nighthawk IP to 192.168.1.50"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"update_node_ip","args":{"node":"nighthawk","ip":"192.168.1.50"}}'},
+    {"role": "user",      "content": "update storage-node IP to 192.168.1.50"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"update_node_ip","args":{"node":"storage-node","ip":"192.168.1.50"}}'},
 
-    {"role": "user",      "content": "delete nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"delete_node","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "delete storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"delete_node","args":{"node":"storage-node"}}'},
 
-    {"role": "user",      "content": "merge VPS into carrera"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"merge_nodes","args":{"source":"VPS","target":"carrera"}}'},
+    {"role": "user",      "content": "merge VPS into remote-server"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"merge_nodes","args":{"source":"VPS","target":"remote-server"}}'},
 
-    {"role": "user",      "content": "consolidate nighthawk and nas"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"merge_nodes","args":{"source":"nighthawk","target":"nas"}}'},
+    {"role": "user",      "content": "consolidate storage-node and nas"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"merge_nodes","args":{"source":"storage-node","target":"nas"}}'},
 
     {"role": "user",      "content": "deduplicate nodes"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"deduplicate_nodes","args":{}}'},
@@ -1098,29 +1098,29 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "add a node"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"add_node","args":{"node":"","hostname":""}}'},
 
-    {"role": "user",      "content": "ssh into nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"nighthawk","username":""}}'},
+    {"role": "user",      "content": "ssh into storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"storage-node","username":""}}'},
 
     {"role": "user",      "content": "connect to server1"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"server1","username":""}}'},
 
-    {"role": "user",      "content": "ssh nighthawk as admin"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"nighthawk","username":"admin"}}'},
+    {"role": "user",      "content": "ssh storage-node as admin"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"storage-node","username":"admin"}}'},
 
-    {"role": "user",      "content": "open terminal on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"nighthawk","username":""}}'},
+    {"role": "user",      "content": "open terminal on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"storage-node","username":""}}'},
 
-    {"role": "user",      "content": "connect carrera"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"carrera","username":""}}'},
+    {"role": "user",      "content": "connect remote-server"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"ssh_node","args":{"node":"remote-server","username":""}}'},
 
-    {"role": "user",      "content": "set ssh username for carrera to ishaan"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"update_ssh_profile","args":{"node":"carrera","username":"ishaan","key_path":""}}'},
+    {"role": "user",      "content": "set ssh username for remote-server to user"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"update_ssh_profile","args":{"node":"remote-server","username":"user","key_path":""}}'},
 
-    {"role": "user",      "content": "configure nighthawk ssh as pi"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"update_ssh_profile","args":{"node":"nighthawk","username":"pi","key_path":""}}'},
+    {"role": "user",      "content": "configure storage-node ssh as pi"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"update_ssh_profile","args":{"node":"storage-node","username":"pi","key_path":""}}'},
 
-    {"role": "user",      "content": "set carrera ssh key to default"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"update_ssh_profile","args":{"node":"carrera","username":"","key_path":"default"}}'},
+    {"role": "user",      "content": "set remote-server ssh key to default"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"update_ssh_profile","args":{"node":"remote-server","username":"","key_path":"default"}}'},
 
     {"role": "user",      "content": "what are my system specs"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"get_system_specs","args":{}}'},
@@ -1500,15 +1500,15 @@ FEW_SHOTS: list[dict] = [
     {"role": "assistant", "content": '{"action":"call_tool","name":"update_project_status","args":{"name":"KOI","status":"complete"}}'},
 
     # ── Service registry (Phase 10) ───────────────────────────────────────────
-    {"role": "user",      "content": "show services on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "show services on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"storage-node"}}'},
 
     # ── Service assignment (Phase 10B) ────────────────────────────────────────
-    {"role": "user",      "content": "register nighthawk service as NAS"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"register_node_preset","args":{"node":"nighthawk","preset":"NAS"}}'},
+    {"role": "user",      "content": "register storage-node service as NAS"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"register_node_preset","args":{"node":"storage-node","preset":"NAS"}}'},
 
-    {"role": "user",      "content": "register nighthawk as NAS"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"register_node_preset","args":{"node":"nighthawk","preset":"NAS"}}'},
+    {"role": "user",      "content": "register storage-node as NAS"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"register_node_preset","args":{"node":"storage-node","preset":"NAS"}}'},
 
     {"role": "user",      "content": "configure pi-zero as media-player"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"register_node_preset","args":{"node":"pi-zero","preset":"media-player"}}'},
@@ -1519,35 +1519,35 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "set up drone-01 as a drone"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"register_node_preset","args":{"node":"drone-01","preset":"drone"}}'},
 
-    {"role": "user",      "content": "nighthawk should run NAS services"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"register_node_preset","args":{"node":"nighthawk","preset":"NAS"}}'},
+    {"role": "user",      "content": "storage-node should run NAS services"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"register_node_preset","args":{"node":"storage-node","preset":"NAS"}}'},
 
-    {"role": "user",      "content": "add samba service to nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"add_node_service","args":{"node":"nighthawk","service":"samba","type":"","description":""}}'},
+    {"role": "user",      "content": "add samba service to storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"add_node_service","args":{"node":"storage-node","service":"samba","type":"","description":""}}'},
 
-    {"role": "user",      "content": "add ssh service to nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"add_node_service","args":{"node":"nighthawk","service":"ssh","type":"","description":""}}'},
+    {"role": "user",      "content": "add ssh service to storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"add_node_service","args":{"node":"storage-node","service":"ssh","type":"","description":""}}'},
 
-    {"role": "user",      "content": "nighthawk runs file-storage"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"add_node_service","args":{"node":"nighthawk","service":"file-storage","type":"","description":""}}'},
+    {"role": "user",      "content": "storage-node runs file-storage"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"add_node_service","args":{"node":"storage-node","service":"file-storage","type":"","description":""}}'},
 
     {"role": "user",      "content": "assign media-player service to pi-zero"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"add_node_service","args":{"node":"pi-zero","service":"media-player","type":"","description":""}}'},
 
-    {"role": "user",      "content": "remove samba service from nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"remove_node_service","args":{"node":"nighthawk","service":"samba"}}'},
+    {"role": "user",      "content": "remove samba service from storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"remove_node_service","args":{"node":"storage-node","service":"samba"}}'},
 
-    {"role": "user",      "content": "remove ssh from carrera"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"remove_node_service","args":{"node":"carrera","service":"ssh"}}'},
+    {"role": "user",      "content": "remove ssh from remote-server"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"remove_node_service","args":{"node":"remote-server","service":"ssh"}}'},
 
-    {"role": "user",      "content": "unregister samba from nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"remove_node_service","args":{"node":"nighthawk","service":"samba"}}'},
+    {"role": "user",      "content": "unregister samba from storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"remove_node_service","args":{"node":"storage-node","service":"samba"}}'},
 
-    {"role": "user",      "content": "rename service samba to file-sharing on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"rename_node_service","args":{"node":"nighthawk","old":"samba","new":"file-sharing"}}'},
+    {"role": "user",      "content": "rename service samba to file-sharing on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"rename_node_service","args":{"node":"storage-node","old":"samba","new":"file-sharing"}}'},
 
-    {"role": "user",      "content": "rename ssh to remote-access on carrera"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"rename_node_service","args":{"node":"carrera","old":"ssh","new":"remote-access"}}'},
+    {"role": "user",      "content": "rename ssh to remote-access on remote-server"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"rename_node_service","args":{"node":"remote-server","old":"ssh","new":"remote-access"}}'},
 
     {"role": "user",      "content": "what services does pi5 have"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"pi5"}}'},
@@ -1555,20 +1555,20 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "list all services"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":""}}'},
 
-    {"role": "user",      "content": "play music on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"media.play","node":"nighthawk","args":{}}}'},
+    {"role": "user",      "content": "play music on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"media.play","node":"storage-node","args":{}}}'},
 
     {"role": "user",      "content": "pause music"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"media.pause","node":"","args":{}}}'},
 
-    {"role": "user",      "content": "skip track on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"media.next","node":"nighthawk","args":{}}}'},
+    {"role": "user",      "content": "skip track on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"media.next","node":"storage-node","args":{}}}'},
 
     {"role": "user",      "content": "stop the music"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"media.stop","node":"","args":{}}}'},
 
-    {"role": "user",      "content": "set volume to 50 on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"media.volume","node":"nighthawk","args":{"volume":50}}}'},
+    {"role": "user",      "content": "set volume to 50 on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"media.volume","node":"storage-node","args":{"volume":50}}}'},
 
     {"role": "user",      "content": "move drone-01 forward"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"motion.forward","node":"drone-01","args":{}}}'},
@@ -1582,14 +1582,14 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "start camera stream on pi5"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"camera.stream","node":"pi5","args":{}}}'},
 
-    {"role": "user",      "content": "restart nginx on carrera"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.restart","node":"carrera","args":{"service":"nginx"}}}'},
+    {"role": "user",      "content": "restart nginx on remote-server"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.restart","node":"remote-server","args":{"service":"nginx"}}}'},
 
-    {"role": "user",      "content": "start mysql on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.start","node":"nighthawk","args":{"service":"mysql"}}}'},
+    {"role": "user",      "content": "start mysql on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.start","node":"storage-node","args":{"service":"mysql"}}}'},
 
-    {"role": "user",      "content": "stop apache on carrera"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.stop","node":"carrera","args":{"service":"apache"}}}'},
+    {"role": "user",      "content": "stop apache on remote-server"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.stop","node":"remote-server","args":{"service":"apache"}}}'},
 
     {"role": "user",      "content": "battery status on drone-01"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"battery.status","node":"drone-01","args":{}}}'},
@@ -1601,24 +1601,24 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "show capabilities on pi5"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"pi5"}}'},
 
-    {"role": "user",      "content": "what can nighthawk do"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "what can storage-node do"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"storage-node"}}'},
 
     {"role": "user",      "content": "what capabilities does pi5 have"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"pi5"}}'},
 
-    {"role": "user",      "content": "capabilities on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"nighthawk"}}'},
+    {"role": "user",      "content": "capabilities on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"list_services","args":{"node":"storage-node"}}'},
 
     # ── Systemd service execution via capability (Phase 13A) ─────────────────
     {"role": "user",      "content": "restart docker on pi5"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.restart","node":"pi5","args":{"service":"docker"}}}'},
 
-    {"role": "user",      "content": "restart samba on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.restart","node":"nighthawk","args":{"service":"samba"}}}'},
+    {"role": "user",      "content": "restart samba on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.restart","node":"storage-node","args":{"service":"samba"}}}'},
 
-    {"role": "user",      "content": "stop samba on nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.stop","node":"nighthawk","args":{"service":"samba"}}}'},
+    {"role": "user",      "content": "stop samba on storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.stop","node":"storage-node","args":{"service":"samba"}}}'},
 
     {"role": "user",      "content": "start docker on pi5"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"execute_capability","args":{"capability":"system.start","node":"pi5","args":{"service":"docker"}}}'},
@@ -1660,8 +1660,8 @@ FEW_SHOTS: list[dict] = [
     {"role": "user",      "content": "find latest PDF"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"find_files","args":{"query":"","extension":"pdf","location":""}}'},
 
-    {"role": "user",      "content": "find files related to nighthawk"},
-    {"role": "assistant", "content": '{"action":"call_tool","name":"find_files","args":{"query":"nighthawk","extension":"","location":""}}'},
+    {"role": "user",      "content": "find files related to storage-node"},
+    {"role": "assistant", "content": '{"action":"call_tool","name":"find_files","args":{"query":"storage-node","extension":"","location":""}}'},
 
     {"role": "user",      "content": "search DroneHive files"},
     {"role": "assistant", "content": '{"action":"call_tool","name":"find_files","args":{"query":"","extension":"","location":"DroneHive"}}'},
@@ -1795,22 +1795,22 @@ FEW_SHOTS: list[dict] = [
     {"role": "assistant", "content": '{"action":"call_tool","name":"list_launch_preferences","args":{}}'},
 
     # ── Entity registry queries — handled by device/project registry, not web/LLM ──
-    {"role": "user",      "content": "what sensors does nighthawk have"},
+    {"role": "user",      "content": "what sensors does storage-node have"},
     {"role": "assistant", "content": '{"action":"final"}'},
 
-    {"role": "user",      "content": "does nighthawk have a camera"},
+    {"role": "user",      "content": "does storage-node have a camera"},
     {"role": "assistant", "content": '{"action":"final"}'},
 
-    {"role": "user",      "content": "does nighthawk have thermal imaging"},
+    {"role": "user",      "content": "does storage-node have thermal imaging"},
     {"role": "assistant", "content": '{"action":"final"}'},
 
-    {"role": "user",      "content": "nighthawk specs"},
+    {"role": "user",      "content": "storage-node specs"},
     {"role": "assistant", "content": '{"action":"final"}'},
 
-    {"role": "user",      "content": "nighthawk hardware"},
+    {"role": "user",      "content": "storage-node hardware"},
     {"role": "assistant", "content": '{"action":"final"}'},
 
-    {"role": "user",      "content": "what is nighthawk"},
+    {"role": "user",      "content": "what is storage-node"},
     {"role": "assistant", "content": '{"action":"final"}'},
 
     {"role": "user",      "content": "what is cyberdeck"},
@@ -2556,7 +2556,7 @@ _TKW = r"(?:telemetry|metrics?|stats?|health|status|cpu|ram|memory|disk|temperat
 _NODE_TELEM = re.compile(
     rf"^(?:(?:show|get|display|check)\s+)?{_N}(?:'s)?\s+{_TKW}[\?\.!]?$", re.I
 )
-# "show <metric> [for/of] <node>" — e.g. "show telemetry for pi5", "check cpu of nighthawk"
+# "show <metric> [for/of] <node>" — e.g. "show telemetry for pi5", "check cpu of storage-node"
 _NODE_TELEM_FOR = re.compile(
     rf"^(?:show|get|display|check)\s+{_TKW}(?:\s+(?:for|of|on|from))?\s+{_N}[\?\.!]?$", re.I
 )
@@ -2854,7 +2854,7 @@ _CAP_CAMERA_STREAM_STOP = re.compile(
     r"^stop\s+(?:camera\s+)?stream" + _OPT_NODE, re.I)
 
 # ── System service capability regexes ─────────────────────────────────────────
-# "restart nginx on carrera" / "stop apache on nighthawk"
+# "restart nginx on remote-server" / "stop apache on storage-node"
 _SVC_NAME = r"([a-zA-Z0-9_.\-]{1,64})"
 _ON_NODE   = rf"(?:\s+on\s+{_N})?[\?\.!]?$"
 _CAP_SYS_RESTART = re.compile(rf"^restart\s+{_SVC_NAME}{_ON_NODE}", re.I)
@@ -4456,7 +4456,7 @@ def _regex_capability(query: str) -> dict | None:
     if m:
         return _cap("media.previous", m.group(1).strip() if m.group(1) else "")
 
-    # Media — volume ("set volume to 50 on nighthawk")
+    # Media — volume ("set volume to 50 on storage-node")
     m = _CAP_MEDIA_VOL.match(text)
     if m:
         vol = int(m.group(1))
@@ -4506,7 +4506,7 @@ def _regex_capability(query: str) -> dict | None:
     if m:
         return _cap("sensor.read", m.group(1))
 
-    # System service control — "restart nginx on carrera"
+    # System service control — "restart nginx on remote-server"
     m = _CAP_SYS_RESTART.match(text)
     if m:
         svc_name = m.group(1).strip()

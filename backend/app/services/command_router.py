@@ -286,7 +286,7 @@ def _is_web_search(q: str) -> tuple[bool, str]:
     if re.match(r"^(?:how\s+much\s+(?:is|does|are))\s+", q):
         return True, "WebSearch"
     if re.match(r"^(?:who\s+(?:is|was|are|were))\s+", q):
-        if not re.search(r"\b(?:nighthawk|cyberdeck|drone|koi|brain|silvia|cmd|artoo|magi)\b", q, re.I):
+        if not re.search(r"\b(?:storage-node|cyberdeck|drone|koi|brain|silvia|cmd|artoo|magi)\b", q, re.I):
             return True, "WebSearch"
     if re.search(r"\bcrypto\b", q):
         return True, "WebSearch"

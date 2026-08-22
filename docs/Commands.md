@@ -397,7 +397,7 @@ show all servers
 ```
 add laptop
 register server1 at 192.168.1.10
-add nighthawk at 100.64.1.5
+add storage-node at 100.64.1.5
 ```
 
 ---
@@ -470,8 +470,8 @@ add nighthawk at 100.64.1.5
 
 **Examples:**
 ```
-merge VPS into carrera
-consolidate nighthawk and nas
+merge VPS into remote-server
+consolidate storage-node and nas
 ```
 
 ---
@@ -500,7 +500,7 @@ show workstation telemetry
 workstation cpu
 workstation ram
 pi5 telemetry
-show nighthawk metrics
+show storage-node metrics
 show drone-01 battery
 show robot-01 mission state
 ```
@@ -552,7 +552,7 @@ reboot pi5
 
 ### restart service
 ```
-restart service nginx on carrera
+restart service nginx on remote-server
 ```
 
 ### bulk command (all nodes of type)
@@ -578,8 +578,8 @@ reboot all vps
 
 **Examples:**
 ```
-connect carrera
-ssh into nighthawk
+connect remote-server
+ssh into storage-node
 connect to server1
 open terminal on pi5
 ```
@@ -593,7 +593,7 @@ open terminal on pi5
 
 **Examples:**
 ```
-ssh nighthawk as admin
+ssh storage-node as admin
 ssh pi5 as pi
 ```
 
@@ -606,10 +606,10 @@ ssh pi5 as pi
 
 **Examples:**
 ```
-set ssh username for carrera to ishaan
-configure nighthawk ssh as pi
-update pi_ai ssh to use key ~/.ssh/id_ed25519
-set carrera ssh key to default
+set ssh username for remote-server to user
+configure storage-node ssh as pi
+update edge_node ssh to use key ~/.ssh/id_ed25519
+set remote-server ssh key to default
 ```
 
 ---
@@ -632,10 +632,10 @@ set carrera ssh key to default
 
 **Examples:**
 ```
-register nighthawk as NAS
+register storage-node as NAS
 register pi-zero as media-player
 set up drone-01 as drone
-configure nighthawk as a NAS
+configure storage-node as a NAS
 ```
 
 **Presets:** nas, media-player, robot, esp32, web-server, drone
@@ -649,9 +649,9 @@ configure nighthawk as a NAS
 
 **Examples:**
 ```
-add samba service to nighthawk
-nighthawk runs file-storage
-add ssh service to carrera
+add samba service to storage-node
+storage-node runs file-storage
+add ssh service to remote-server
 ```
 
 ---
@@ -679,18 +679,18 @@ add ssh service to carrera
 
 **Examples:**
 ```
-play music on nighthawk
+play music on storage-node
 pause music
 stop the music
-skip track on nighthawk
-set volume to 50 on nighthawk
+skip track on storage-node
+set volume to 50 on storage-node
 move drone-01 forward
 stop rover
 take a photo on pi5
 start camera stream on pi5
 stop camera stream on pi5
-restart nginx on carrera
-start mysql on nighthawk
+restart nginx on remote-server
+start mysql on storage-node
 read sensor on esp32-01
 battery status on drone-01
 ```
@@ -897,7 +897,7 @@ find STL files
 find PCB files
 find python files in CMD-CTR
 find latest PDF
-find files related to nighthawk
+find files related to storage-node
 show all KiCad projects
 find STL in DroneHive
 ```
@@ -949,7 +949,7 @@ open latest KiCad project
 
 **Syntax:** `add [name] folder at [absolute path]`
 
-**Example:** `add Cyberdeck folder at C:\Users\IshaanV\Documents\GitHub\Cyberdeck`
+**Example:** `add Cyberdeck folder at C:\Users\user\Documents\GitHub\Cyberdeck`
 
 ---
 
@@ -1338,13 +1338,13 @@ what projects become buildable
 ### import BOM
 ```
 import BOM /path/to/Widget_BOM.csv
-import bom C:\Users\IshaanV\Documents\DroneHive_BOM.csv
+import bom C:\Users\user\Documents\DroneHive_BOM.csv
 ```
 
 ### import inventory file
 ```
 import inventory /path/to/stock.csv
-load inventory C:\Users\IshaanV\Documents\stock.csv
+load inventory C:\Users\user\Documents\stock.csv
 ```
 
 ### show imports

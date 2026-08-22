@@ -210,7 +210,7 @@ Every SILVIA command works by voice. Speak naturally after "Hey SILVIA":
 ```
 Hey SILVIA, what time is it?
 Hey SILVIA, what's the weather in London?
-Hey SILVIA, show nighthawk telemetry
+Hey SILVIA, show storage-node telemetry
 Hey SILVIA, open VS Code
 Hey SILVIA, add task finish DroneHive PCB
 Hey SILVIA, morning briefing

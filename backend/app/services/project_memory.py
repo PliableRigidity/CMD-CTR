@@ -21,7 +21,7 @@ MEMORY_TYPES = frozenset({
 })
 
 _KNOWN_PROJECTS = [
-    "Cyberdeck", "DroneHive", "KOI", "Nighthawk", "MAGI", "Artoo",
+    "Cyberdeck", "DroneHive", "KOI", "Storage Node", "MAGI", "Artoo",
     "FPV_Aircraft", "BespokeToMe", "ProjFreeGuy", "CMD-CTR", "SILVIA",
     "Brain63", "HiveFC", "University",
 ]
