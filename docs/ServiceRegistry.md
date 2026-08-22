@@ -21,7 +21,7 @@ The Service Registry maps named services to nodes. A service represents a capabi
 Services sit between nodes and capabilities:
 
 ```
-Node (nighthawk) 
+Node (storage-node)
   └── Service (samba)         ← Service Registry
         └── Capability (file-storage.read)  ← Capability Registry
 ```
@@ -63,8 +63,8 @@ Presets register a standard bundle of services on a node with one command.
 ### Register a Preset
 
 ```
-register nighthawk as NAS
-configure nighthawk as a NAS
+register storage-node as NAS
+configure storage-node as a NAS
 register pi-zero as media-player
 set up drone-01 as drone
 ```
@@ -77,15 +77,15 @@ set up drone-01 as drone
 
 ```
 # Add with preset
-register nighthawk as NAS
+register storage-node as NAS
 
 # Add a single service
-add samba service to nighthawk
-nighthawk runs file-storage
+add samba service to storage-node
+storage-node runs file-storage
 assign media-player to pi-zero
-add ssh service to carrera
+add ssh service to remote-server
 pi5 has a sensor service
-add nginx to carrera type web-server
+add nginx to remote-server type web-server
 ```
 
 ### Via API
@@ -131,30 +131,30 @@ Common service type values (free text — no enforced enum):
 
 ```
 # List services
-show services on nighthawk
+show services on storage-node
 what services does pi5 have
 list all services
 
 # Add services
-add samba service to nighthawk
-nighthawk runs file-storage
+add samba service to storage-node
+storage-node runs file-storage
 assign media-player to pi-zero
-add ssh service to carrera
+add ssh service to remote-server
 
 # Register preset
-register nighthawk as NAS
+register storage-node as NAS
 register pi-zero as media-player
 set up drone-01 as drone
 
 # Remove services
-remove samba service from nighthawk
-remove ssh from carrera
+remove samba service from storage-node
+remove ssh from remote-server
 delete media-player from pi-zero
-unregister samba from nighthawk
+unregister samba from storage-node
 
 # Rename services
-rename service samba to file-sharing on nighthawk
-rename ssh to remote-access on carrera
+rename service samba to file-sharing on storage-node
+rename ssh to remote-access on remote-server
 ```
 
 ---

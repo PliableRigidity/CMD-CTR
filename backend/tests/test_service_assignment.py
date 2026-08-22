@@ -37,7 +37,7 @@ def isolated_db(tmp_path, monkeypatch):
         _ns_mod = importlib.import_module("backend.app.services.node_service")
     monkeypatch.setattr(_ns_mod, "DB_PATH", db_file, raising=False)
 
-    # Let NodeService() initialise the full schema (with seed nodes including nighthawk)
+    # Let NodeService() initialise the full schema (with seed nodes including storage-node)
     _ns_mod.NodeService()  # triggers _init_db() and seed inserts
 
     # Insert pi-zero as an extra test node (not in seed data)
@@ -102,26 +102,26 @@ def _get_node_id(db_file, name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Test 1: Register NAS preset on nighthawk
+# Test 1: Register NAS preset on storage-node
 # ---------------------------------------------------------------------------
 
 def test_register_nas_preset(isolated_db):
     from backend.app.tools.service_tool import register_node_preset
 
-    result = register_node_preset("nighthawk", "NAS")
+    result = register_node_preset("storage-node", "NAS")
 
     assert result["ok"], f"Expected ok=True, got: {result}"
-    assert result["node_name"].lower() == "nighthawk"
+    assert result["node_name"].lower() == "storage-node"
     assert result["preset"] == "nas"
     assert "samba" in result["services"]
     assert "ssh" in result["services"]
     assert "file-storage" in result["services"]
     assert "Done." in result["summary"]
 
-    # Verify DB rows created — nighthawk is a seed node with id="nighthawk"
+    # Verify DB rows created — storage-node is a seed node with id="storage-node"
     from backend.app.services.node_service import NodeService
     ns = NodeService()
-    night = next((n for n in ns.list_nodes() if n.name.lower() == "nighthawk"), None)
+    night = next((n for n in ns.list_nodes() if n.name.lower() == "storage-node"), None)
     assert night is not None
     names = _all_service_names(isolated_db, night.id)
     assert "samba" in names
@@ -137,11 +137,11 @@ def test_list_services_after_preset(isolated_db):
     from backend.app.tools.service_tool import register_node_preset
     from backend.app.services.service_registry import ServiceRegistry
 
-    register_node_preset("nighthawk", "NAS")
+    register_node_preset("storage-node", "NAS")
 
     from backend.app.services.node_service import NodeService
     ns = NodeService()
-    night = next((n for n in ns.list_nodes() if n.name.lower() == "nighthawk"), None)
+    night = next((n for n in ns.list_nodes() if n.name.lower() == "storage-node"), None)
     assert night is not None
 
     registry = ServiceRegistry()
@@ -160,14 +160,14 @@ def test_list_services_after_preset(isolated_db):
 def test_add_single_service(isolated_db):
     from backend.app.tools.service_tool import add_node_service
 
-    result = add_node_service("nighthawk", "nfs")
+    result = add_node_service("storage-node", "nfs")
 
     assert result["ok"], f"Expected ok=True, got: {result}"
     assert result["action"] == "added"
     assert result["service_name"] == "nfs"
     assert "Done." in result["summary"]
 
-    node_id = _get_node_id(isolated_db, "nighthawk")
+    node_id = _get_node_id(isolated_db, "storage-node")
     count = _service_count(isolated_db, node_id, "nfs")
     assert count == 1
 
@@ -179,11 +179,11 @@ def test_add_single_service(isolated_db):
 def test_remove_service(isolated_db):
     from backend.app.tools.service_tool import add_node_service, remove_node_service
 
-    node_id = _get_node_id(isolated_db, "nighthawk")
-    add_node_service("nighthawk", "samba")
+    node_id = _get_node_id(isolated_db, "storage-node")
+    add_node_service("storage-node", "samba")
     assert _service_count(isolated_db, node_id, "samba") == 1
 
-    result = remove_node_service("nighthawk", "samba")
+    result = remove_node_service("storage-node", "samba")
 
     assert result["ok"], f"Expected ok=True, got: {result}"
     assert result["service_name"] == "samba"
@@ -214,15 +214,15 @@ def test_assign_media_player_to_pi_zero(isolated_db):
 def test_duplicate_prevention(isolated_db):
     from backend.app.tools.service_tool import add_node_service
 
-    r1 = add_node_service("nighthawk", "samba")
+    r1 = add_node_service("storage-node", "samba")
     assert r1["ok"]
     assert r1["action"] == "added"
 
-    r2 = add_node_service("nighthawk", "samba")
+    r2 = add_node_service("storage-node", "samba")
     assert r2["ok"]
     assert r2["action"] == "updated"  # must update, not create second row
 
-    node_id = _get_node_id(isolated_db, "nighthawk")
+    node_id = _get_node_id(isolated_db, "storage-node")
     count = _service_count(isolated_db, node_id, "samba")
     assert count == 1, f"Expected exactly 1 row for 'samba', got {count}"
 
@@ -234,16 +234,16 @@ def test_duplicate_prevention(isolated_db):
 def test_rename_service(isolated_db):
     from backend.app.tools.service_tool import add_node_service, rename_node_service
 
-    add_node_service("nighthawk", "samba")
+    add_node_service("storage-node", "samba")
 
-    result = rename_node_service("nighthawk", "samba", "file-sharing")
+    result = rename_node_service("storage-node", "samba", "file-sharing")
 
     assert result["ok"], f"Expected ok=True, got: {result}"
     assert result["old_name"] == "samba"
     assert result["new_name"] == "file-sharing"
     assert "Done." in result["summary"]
 
-    node_id = _get_node_id(isolated_db, "nighthawk")
+    node_id = _get_node_id(isolated_db, "storage-node")
     assert _service_count(isolated_db, node_id, "samba") == 0
     assert _service_count(isolated_db, node_id, "file-sharing") == 1
 
@@ -269,7 +269,7 @@ def test_node_not_found(isolated_db):
 def test_unknown_preset(isolated_db):
     from backend.app.tools.service_tool import register_node_preset
 
-    result = register_node_preset("nighthawk", "not-a-preset-xyz")
+    result = register_node_preset("storage-node", "not-a-preset-xyz")
 
     assert not result["ok"]
     assert result["error"] == "preset_not_found"
@@ -282,7 +282,7 @@ def test_unknown_preset(isolated_db):
 def test_remove_nonexistent_service(isolated_db):
     from backend.app.tools.service_tool import remove_node_service
 
-    result = remove_node_service("nighthawk", "ghost-service")
+    result = remove_node_service("storage-node", "ghost-service")
 
     assert not result["ok"]
     assert result["error"] == "service_not_found"
@@ -295,10 +295,10 @@ def test_remove_nonexistent_service(isolated_db):
 def test_planner_regex_register_preset():
     from backend.app.tools.planner import _regex_fallback
 
-    result = _regex_fallback("register nighthawk service as NAS")
+    result = _regex_fallback("register storage-node service as NAS")
     assert result["action"] == "call_tool"
     assert result["name"] == "register_node_preset"
-    assert result["args"]["node"] == "nighthawk"
+    assert result["args"]["node"] == "storage-node"
     assert result["args"]["preset"].upper() == "NAS"
 
 
@@ -309,10 +309,10 @@ def test_planner_regex_register_preset():
 def test_planner_regex_add_service():
     from backend.app.tools.planner import _regex_fallback
 
-    result = _regex_fallback("add samba service to nighthawk")
+    result = _regex_fallback("add samba service to storage-node")
     assert result["action"] == "call_tool"
     assert result["name"] == "add_node_service"
-    assert result["args"]["node"] == "nighthawk"
+    assert result["args"]["node"] == "storage-node"
     assert result["args"]["service"] == "samba"
 
 
@@ -323,10 +323,10 @@ def test_planner_regex_add_service():
 def test_planner_regex_remove_service():
     from backend.app.tools.planner import _regex_fallback
 
-    result = _regex_fallback("remove samba service from nighthawk")
+    result = _regex_fallback("remove samba service from storage-node")
     assert result["action"] == "call_tool"
     assert result["name"] == "remove_node_service"
-    assert result["args"]["node"] == "nighthawk"
+    assert result["args"]["node"] == "storage-node"
     assert result["args"]["service"] == "samba"
 
 
@@ -337,23 +337,23 @@ def test_planner_regex_remove_service():
 def test_planner_regex_rename_service():
     from backend.app.tools.planner import _regex_fallback
 
-    result = _regex_fallback("rename service samba to file-sharing on nighthawk")
+    result = _regex_fallback("rename service samba to file-sharing on storage-node")
     assert result["action"] == "call_tool"
     assert result["name"] == "rename_node_service"
     assert result["args"]["old"] == "samba"
     assert result["args"]["new"] == "file-sharing"
-    assert result["args"]["node"] == "nighthawk"
+    assert result["args"]["node"] == "storage-node"
 
 
 # ---------------------------------------------------------------------------
-# Test 15: Planner regex — "nighthawk runs file-storage"
+# Test 15: Planner regex — "storage-node runs file-storage"
 # ---------------------------------------------------------------------------
 
 def test_planner_regex_node_runs_service():
     from backend.app.tools.planner import _regex_fallback
 
-    result = _regex_fallback("nighthawk runs file-storage")
+    result = _regex_fallback("storage-node runs file-storage")
     assert result["action"] == "call_tool"
     assert result["name"] == "add_node_service"
-    assert result["args"]["node"] == "nighthawk"
+    assert result["args"]["node"] == "storage-node"
     assert result["args"]["service"] == "file-storage"

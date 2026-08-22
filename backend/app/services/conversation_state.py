@@ -38,7 +38,7 @@ import time
 
 _QUICK_SOCIAL: list[tuple[re.Pattern, list[str]]] = [
     # One-word / short greetings — full-string match to prevent "yo check
-    # nighthawk" from landing here.
+    # storage-node" from landing here.
     (
         re.compile(
             r"^(?:yo+|hey+|heya|hiya|howdy|sup|what(?:'s|s)?\s*up)\s*[.,!?~]*\s*$",
@@ -206,7 +206,7 @@ def quick_social_reply(query: str) -> str | None:
 #   explore   — thinking out loud; collaborate on the idea
 
 # Pure social messages: the ENTIRE message is greeting/banter filler.
-# Full-match so "hey, ping nighthawk" never lands here.
+# Full-match so "hey, ping storage-node" never lands here.
 _SOCIAL_FULL = re.compile(
     r"^(?:(?:"
     r"yo+|hey+|hi+|hello+|heya|hiya|howdy|sup|wass?up|whaddup|"
@@ -243,7 +243,7 @@ _OPENER_PATTERNS: list[tuple[re.Pattern, str]] = [
     # "I want another Pi" → "I’d integrate the existing nodes first."
     (re.compile(rf"\bi\s+(?:want|need|keep wanting)\s+(?:a|an|another|a new)\s+{_HARDWARE_WORDS}", re.I), "explore"),
     # "Should I [verb]" — wants a recommendation, not a tool call.
-    # Careful: "should I restart nighthawk" is operational, so guard with no node-ish follow words.
+    # Careful: "should I restart storage-node" is operational, so guard with no node-ish follow words.
     (re.compile(r"^should\s+i\s+(?:buy|get|add|build|use|go with|try|switch|upgrade|move|start|stop|keep|drop|pick)\b", re.I), "explore"),
     # "thinking about getting/buying/adding X"
     (re.compile(r"\bthinking\s+(?:about\s+)?(?:getting|buying|adding|building|switching|trying|upgrading)\b", re.I), "explore"),
@@ -321,7 +321,7 @@ _FACT_QUESTION_PREFIX = re.compile(
 # Nouns that indicate operational intent even in a short message.
 _EXEC_NOUN_VETO = re.compile(
     r"\b(?:online|offline|alive|dead|reachable|unreachable|"   # node state words
-    r"nighthawk|raspberry\s*pi|rpi\w*|esp\w*|jetson\w*|"       # device patterns
+    r"storage-node|raspberry\s*pi|rpi\w*|esp\w*|jetson\w*|"       # device patterns
     r"hardware\b|inventory\b|"                                  # hardware queries must reach the tool router
     r"timezone|time\b|tz\b|volume|ssh\b|vpn\b|mqtt\b|"        # system entities
     r"spotify|discord|vscode|vs\s*code|chrome|firefox|terminal|"  # specific apps

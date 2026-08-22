@@ -506,8 +506,8 @@ class TestRenderWatchAlerts(unittest.TestCase):
                     {
                         "severity": "warning",
                         "category": "infra",
-                        "message": "CPU on carrera at 91%",
-                        "node": "carrera",
+                        "message": "CPU on remote-server at 91%",
+                        "node": "remote-server",
                         "created_at": "2026-06-14T10:00:00",
                         "rule": "cpu_high",
                         "value": 91.0,
@@ -518,7 +518,7 @@ class TestRenderWatchAlerts(unittest.TestCase):
             },
         }
         out = _svc()._render_watch_alerts(result)
-        self.assertIn("carrera", out)
+        self.assertIn("remote-server", out)
         self.assertIn("91", out)
 
 

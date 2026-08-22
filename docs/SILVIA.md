@@ -280,17 +280,17 @@ See [Section 7](#7-node-registry) for full node management documentation.
 | `what nodes are online` | Same |
 | `add laptop at 192.168.1.50` | Register new node |
 | `add pi5` | Register without hostname (SILVIA asks) |
-| `delete nighthawk` | Remove from registry (asks confirmation) |
-| `update nighthawk IP to 100.64.1.5` | Update hostname/IP |
+| `delete storage-node` | Remove from registry (asks confirmation) |
+| `update storage-node IP to 100.64.1.5` | Update hostname/IP |
 
 ### 6.7 Node Telemetry
 
-> **Important:** For a newly registered node, **ping it first** (`ping nighthawk`) to establish its status in the registry, then request telemetry. Nodes without a silvia-agent configured will only show metrics after a successful probe.
+> **Important:** For a newly registered node, **ping it first** (`ping storage-node`) to establish its status in the registry, then request telemetry. Nodes without a silvia-agent configured will only show metrics after a successful probe.
 
 | Say | What happens |
 |---|---|
-| `show nighthawk telemetry` | CPU, RAM, disk, temp, uptime |
-| `nighthawk cpu` | Same |
+| `show storage-node telemetry` | CPU, RAM, disk, temp, uptime |
+| `storage-node cpu` | Same |
 | `workstation ram` | Same for any node |
 | `show all node telemetry` | Full infrastructure view |
 | `show hottest node` | All nodes sorted by temperature |
@@ -301,10 +301,10 @@ See [Section 7](#7-node-registry) for full node management documentation.
 
 | Say | What happens |
 |---|---|
-| `ping nighthawk` | Live ICMP probe right now |
-| `is nighthawk online` | Same (live probe) |
-| `status of nighthawk` | Cached registry status (no live probe) |
-| `verify nighthawk` | Full verification chain: silvia-agent → Tailscale → DNS → ping |
+| `ping storage-node` | Live ICMP probe right now |
+| `is storage-node online` | Same (live probe) |
+| `status of storage-node` | Cached registry status (no live probe) |
+| `verify storage-node` | Full verification chain: silvia-agent → Tailscale → DNS → ping |
 | `verify all nodes` | Verify every registered node |
 | `refresh nodes` | Same |
 
@@ -314,10 +314,10 @@ See [Section 7](#7-node-registry) for full node management documentation.
 
 | Say | What happens |
 |---|---|
-| `ssh into nighthawk` | Opens SSH terminal (asks for username) |
-| `ssh nighthawk as admin` | Opens immediately with username |
+| `ssh into storage-node` | Opens SSH terminal (asks for username) |
+| `ssh storage-node as admin` | Opens immediately with username |
 | `connect to server1` | Same |
-| `open terminal on nighthawk` | Same |
+| `open terminal on storage-node` | Same |
 
 After SILVIA asks for a username, reply with just the username (e.g., `ubuntu`). Say `cancel` to abort.
 
@@ -468,7 +468,7 @@ The node registry is a SQLite table (`data/cmdctr.db`) that tracks every machine
 
 Via chat:
 ```
-add nighthawk at 100.64.1.23
+add storage-node at 100.64.1.23
 add pi5 at 192.168.1.10
 register server1 at 10.0.0.5
 ```
@@ -682,7 +682,7 @@ A query is treated as multi-step if it contains any of these signals **and** has
 
 Examples that trigger Hermes:
 ```
-show nighthawk status and if online show me its telemetry
+show storage-node status and if online show me its telemetry
 check what tasks I have and also show my reminders
 first check the watch alerts then show node health
 ```
@@ -711,7 +711,7 @@ For node-related conditional queries via Hermes, SILVIA always calls `get_node_t
 
 > **Workflow for new nodes:** Before querying a new node via Hermes, probe it first:
 > ```
-> ping nighthawk
+> ping storage-node
 > ```
 > This establishes its registry status. Then multi-step queries that depend on "is it online" will work correctly.
 
@@ -858,10 +858,10 @@ Escalation alerts use separate `rule_key` suffixes (`:escalated`, `:elevated`) s
 
 ### Offline Duration Intelligence
 
-Instead of the static message "Nighthawk offline for 30+ min", the Watch Officer tracks the actual elapsed time and includes it in the alert message:
+Instead of the static message "Storage Node offline for 30+ min", the Watch Officer tracks the actual elapsed time and includes it in the alert message:
 
 ```
-Nighthawk offline for 2.3h
+Storage Node offline for 2.3h
 ```
 
 The message updates on each Watch Officer loop (every 30 seconds) with the current duration.
@@ -871,7 +871,7 @@ The message updates on each Watch Officer loop (every 30 seconds) with the curre
 If 3 or more active alerts are present simultaneously for the same node (e.g., offline + CPU + RAM), the Watch Officer raises a synthesis alert:
 
 ```
-[CRITICAL] Nighthawk: 3 active issues detected simultaneously
+[CRITICAL] Storage Node: 3 active issues detected simultaneously
 ```
 
 This `rule_key` is `node:{id}:cluster` and auto-resolves when the node drops below 3 simultaneous issues.
@@ -1645,7 +1645,7 @@ Commands:
 - `find STL files`
 - `find PCB files`
 - `find python files in CMD-CTR`
-- `find files related to nighthawk`
+- `find files related to storage-node`
 - `show recent files`
 
 ### Application Registry
@@ -1807,10 +1807,10 @@ Telegram bridge started — polling active, 1 allowed user(s)
 Commands that normally require confirmation in the web UI (destructive actions, commands that execute on nodes) behave the same way in Telegram. SILVIA will reply with the confirmation prompt, and you can respond:
 
 ```
-you: reboot nighthawk
-SILVIA: ⚠️ Are you sure you want to reboot Nighthawk? Reply yes to confirm or cancel to abort.
+you: reboot storage-node
+SILVIA: ⚠️ Are you sure you want to reboot Storage Node? Reply yes to confirm or cancel to abort.
 you: yes
-SILVIA: Sending reboot command to Nighthawk...
+SILVIA: Sending reboot command to Storage Node...
 ```
 
 ### Singleton Guard
@@ -1899,9 +1899,9 @@ Bare system commands that require actual execution output:
 
 ### SSH terminal awareness
 
-When SILVIA opens an SSH terminal (e.g., via `ssh nighthawk`), she records that a terminal window was opened but acknowledges she has **no command channel** to it. Subsequent infrastructure queries return:
+When SILVIA opens an SSH terminal (e.g., via `ssh storage-node`), she records that a terminal window was opened but acknowledges she has **no command channel** to it. Subsequent infrastructure queries return:
 
-> I opened an SSH terminal to **nighthawk**, but I don't have a command channel to run `hostname` on it remotely. Run the command in the SSH terminal window.
+> I opened an SSH terminal to **storage-node**, but I don't have a command channel to run `hostname` on it remotely. Run the command in the SSH terminal window.
 >
 > To run `hostname` on **this machine**, say: **run hostname**
 
@@ -1929,7 +1929,7 @@ Ensures that workflow approval always triggers actual tool execution — never a
 
 ### Problem it solves
 
-Previously, approving a workflow like `approve WF-019` (for `ssh nighthawk`) would update the workflow status to "approved" but not execute anything. The response was generated by the LLM ("Okay, approved. Let's see what nighthawk is up to.") — pure fabrication with no real action taken. The tool's try/except block silently swallowed exceptions and returned `None`, which was treated as "no response" rather than "execution failure".
+Previously, approving a workflow like `approve WF-019` (for `ssh storage-node`) would update the workflow status to "approved" but not execute anything. The response was generated by the LLM ("Okay, approved. Let's see what storage-node is up to.") — pure fabrication with no real action taken. The tool's try/except block silently swallowed exceptions and returned `None`, which was treated as "no response" rather than "execution failure".
 
 ### How it works
 
@@ -1975,7 +1975,7 @@ Stored in the `execution_result` column of the `workflows` table:
   "executed": true,
   "success": true,
   "executor": "ssh_node",
-  "raw_output": "SSH terminal opened — Nighthawk as ishaan.",
+  "raw_output": "SSH terminal opened — Storage Node as user.",
   "error": null
 }
 ```
@@ -2024,7 +2024,7 @@ SSH_REQUIRES_APPROVAL=true    # require approval workflow for SSH
 ```
 
 Commands that work directly when approval is disabled:
-- `ssh nighthawk` / `connect nighthawk` / `open ssh to nighthawk`
+- `ssh storage-node` / `connect storage-node` / `open ssh to storage-node`
 - If terminal launch fails, SILVIA shows the exact error (never fabricates success)
 
 ### Safe Mode

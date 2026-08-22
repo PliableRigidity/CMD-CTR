@@ -359,7 +359,7 @@ Via API:
 ```http
 POST /api/hardware/imports
 {
-  "path": "C:/Users/IshaanV/Documents/DroneHive_BOM.csv",
+  "path": "C:/Users/user/Documents/DroneHive_BOM.csv",
   "source_type": "bom",
   "project": "DroneHive"
 }

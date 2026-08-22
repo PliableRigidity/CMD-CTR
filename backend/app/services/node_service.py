@@ -113,7 +113,7 @@ def _init_db() -> None:
         # One-time dedup: remove UUID-id nodes that share tailscale_ip with a named seed node
         _cleanup_duplicate_nodes(conn)
         conn.commit()
-        # Seed known nodes using INSERT OR IGNORE — safe to run every startup,
+        # Seed the local node using INSERT OR IGNORE — safe to run every startup,
         # never overwrites nodes the user has edited via the UI.
         _SEED_NODES = [
             {
@@ -132,49 +132,40 @@ def _init_db() -> None:
                 ),
             },
             {
-                "id": "pi-ai",
-                "name": "PI_AI",
+                "id": "edge-node",
+                "name": "edge-node",
                 "type": "raspberry-pi",
-                "hostname": "100.121.92.4",
-                "tailscale_ip": "100.121.92.4",
-                "tailscale_name": "pi-ai",
+                "hostname": "192.0.2.10",
+                "tailscale_ip": None,
+                "tailscale_name": None,
                 "agent_url": None,
                 "status": "unknown",
-                "tags": '["ai","edge","exit-node","singapore"]',
-                "notes": (
-                    "Raspberry Pi 5 with AI hardware accelerator. Runs small agents. "
-                    "Tailscale exit node to Singapore. No silvia-agent."
-                ),
+                "tags": '["example","edge"]',
+                "notes": "Example edge node; configure or remove it for your environment.",
             },
             {
-                "id": "carrera",
-                "name": "Carrera",
+                "id": "remote-server",
+                "name": "remote-server",
                 "type": "vps",
-                "hostname": "100.66.147.37",
-                "tailscale_ip": "100.66.147.37",
-                "tailscale_name": "carrera",
+                "hostname": "192.0.2.20",
+                "tailscale_ip": None,
+                "tailscale_name": None,
                 "agent_url": None,
                 "status": "unknown",
-                "tags": '["vps","web","exit-node","europe"]',
-                "notes": (
-                    "VPS for hosting simple sites. "
-                    "Tailscale exit node to Europe. No silvia-agent."
-                ),
+                "tags": '["example","server"]',
+                "notes": "Example remote server; configure or remove it for your environment.",
             },
             {
-                "id": "nighthawk",
-                "name": "Nighthawk",
+                "id": "storage-node",
+                "name": "storage-node",
                 "type": "nas",
-                "hostname": "100.103.126.18",
-                "tailscale_ip": "100.103.126.18",
-                "tailscale_name": "nighthawk",
+                "hostname": "192.0.2.30",
+                "tailscale_ip": None,
+                "tailscale_name": None,
                 "agent_url": None,
                 "status": "unknown",
-                "tags": '["nas","storage","raspberry-pi4"]',
-                "notes": (
-                    "Raspberry Pi 4 NAS system — primary network storage node. "
-                    "No silvia-agent. Expanded role planned."
-                ),
+                "tags": '["example","storage"]',
+                "notes": "Example storage node; configure or remove it for your environment.",
             },
         ]
         for node in _SEED_NODES:
@@ -199,18 +190,6 @@ def _init_db() -> None:
                 ),
             ),
         )
-        # Seed default SSH usernames for known nodes (only when the column is still NULL —
-        # never overwrites values the user has set via the profile command).
-        _SSH_DEFAULTS = [
-            ("carrera",  "ishaan", None),
-            ("nighthawk", "ishaan", None),
-            ("pi-ai",    "ishaan", None),
-        ]
-        for _nid, _uname, _key in _SSH_DEFAULTS:
-            conn.execute(
-                "UPDATE nodes SET ssh_username=? WHERE id=? AND ssh_username IS NULL",
-                (_uname, _nid),
-            )
         # Reset non-workstation nodes that were seeded as "online" but have never
         # been probed — status "online" without a probe is false confidence.
         # The probe loop runs within 60s of startup and will update to the real status.

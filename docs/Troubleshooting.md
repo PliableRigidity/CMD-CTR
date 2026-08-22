@@ -174,16 +174,16 @@ SILVIA sends `WM_CLOSE` (graceful close) and waits 5 seconds. If the app has uns
 
 ### Symptoms
 - Node status = `offline` in Infrastructure Panel
-- `status of nighthawk` → offline
+- `status of storage-node` → offline
 
 ### Diagnosis
 
 ```
 # Check what verification method last worked
-status of nighthawk
+status of storage-node
 
 # Try a fresh verification
-verify nighthawk
+verify storage-node
 
 # Try direct ping
 ping <hostname>
@@ -196,7 +196,7 @@ curl http://<hostname>:7700/health
 
 **IP address changed (DHCP):**
 ```
-update nighthawk IP to 192.168.1.55
+update storage-node IP to 192.168.1.55
 ```
 Or configure a static IP / DHCP reservation.
 
@@ -212,8 +212,8 @@ For Tailscale networks, ensure SILVIA's machine is also in the Tailscale network
 
 **Wrong hostname:**
 ```
-update nighthawk IP to nighthawk.local     # mDNS
-update nighthawk IP to 100.64.1.5          # Tailscale IP
+update storage-node IP to storage-node.local     # mDNS
+update storage-node IP to 100.64.1.5          # Tailscale IP
 ```
 
 ---
@@ -605,7 +605,7 @@ Alerts are shown in the UI regardless of `NOTIFICATION_MIN_SEVERITY`. If you exp
 ## SSH Terminal Not Opening
 
 ### Symptoms
-- `connect carrera` — no terminal opens
+- `connect remote-server` — no terminal opens
 - Windows Terminal doesn't launch
 
 ### Diagnosis
@@ -623,13 +623,13 @@ Install from Microsoft Store: `Windows Terminal`.
 
 **No hostname/IP on the node:**
 ```
-update carrera IP to 192.168.1.50
+update remote-server IP to 192.168.1.50
 ```
 
 **No SSH profile set:**
 SILVIA will ask for username on first connect. Or pre-configure:
 ```
-set ssh username for carrera to ishaan
+set ssh username for remote-server to user
 ```
 
 **SSH not configured on the target machine:**
@@ -637,7 +637,7 @@ Ensure the target has an SSH server running (OpenSSH on Linux/Windows).
 
 **Key-based auth failing:**
 ```
-set carrera ssh key to C:\Users\YourName\.ssh\id_ed25519
+set remote-server ssh key to C:\Users\YourName\.ssh\id_ed25519
 ```
 Ensure the public key is in `~/.ssh/authorized_keys` on the target.
 

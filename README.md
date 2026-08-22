@@ -98,7 +98,7 @@ SILVIA is not a chatbot. It is a personal command center that integrates your en
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/PliableRigidity/CMD-CTR.git
+git clone https://github.com/your-account/SILVIA.git
 cd CMD-CTR
 
 # Backend dependencies
@@ -284,4 +284,4 @@ CMD-CTR/
 
 MIT — see [LICENSE](LICENSE)
 
-*Built by PliableRigidity. SILVIA is a personal project.*
+*SILVIA is a personal project.*

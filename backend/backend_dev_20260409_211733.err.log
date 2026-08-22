@@ -1,7 +1,0 @@
-INFO:     Started server process [36400]
-INFO:     Waiting for application startup.
-2026-04-09 21:17:34 - root - WARNING - Could not attach main log file handler; continuing with console logging only.
-2026-04-09 21:17:34 - root - WARNING - Could not attach error log file handler; continuing without file error logging.
-2026-04-09 21:17:34 - backend.app.core.application - INFO - Assistant platform initialized
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)

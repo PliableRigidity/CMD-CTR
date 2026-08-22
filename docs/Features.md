@@ -152,7 +152,7 @@ pi5 telemetry
 show all node telemetry
 show hottest node
 list drones
-verify nighthawk
+verify storage-node
 verify all nodes
 ```
 
@@ -397,7 +397,7 @@ recent DroneHive files
 open CMD-CTR folder
 open DroneHive
 open latest KiCad project
-add Cyberdeck folder at C:\Users\IshaanV\Documents\GitHub\Cyberdeck
+add Cyberdeck folder at C:\Users\user\Documents\GitHub\Cyberdeck
 list locations
 ```
 
@@ -419,13 +419,13 @@ list locations
 
 **Example Usage:**
 ```
-show services on nighthawk
+show services on storage-node
 what services does pi5 have
 list all services
-register nighthawk as NAS
-add samba service to nighthawk
-rename service samba to file-sharing on nighthawk
-remove samba service from nighthawk
+register storage-node as NAS
+add samba service to storage-node
+rename service samba to file-sharing on storage-node
+remove samba service from storage-node
 ```
 
 ---
@@ -444,14 +444,14 @@ remove samba service from nighthawk
 
 **Example Usage:**
 ```
-play music on nighthawk
+play music on storage-node
 pause music
-set volume to 50 on nighthawk
+set volume to 50 on storage-node
 move drone-01 forward
 stop rover
 take a photo on pi5
 start camera stream on pi5
-restart nginx on carrera
+restart nginx on remote-server
 read sensor on esp32-01
 battery status on drone-01
 ```
@@ -836,9 +836,9 @@ SILVIA: I can't answer `hostname` from inference — infrastructure state must c
 User: run hostname
 → [approve workflow] → Executes locally → "AFTERSHOCK90" with source attribution
 
-User: ssh nighthawk → [approve] → SSH terminal opens
+User: ssh storage-node → [approve] → SSH terminal opens
 User: hostname
-SILVIA: I opened an SSH terminal to nighthawk, but I don't have a command channel.
+SILVIA: I opened an SSH terminal to storage-node, but I don't have a command channel.
         Run the command in the SSH terminal window.
 ```
 
@@ -869,7 +869,7 @@ draft → pending_review → approved → executing → completed
 
 **Example:**
 ```
-User: ssh nighthawk
+User: ssh storage-node
 SILVIA: Workflow WF-028 requires review. Reply: approve WF-028
 
 User: approve WF-028

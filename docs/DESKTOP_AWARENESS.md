@@ -57,7 +57,7 @@ graph TD
 
 App discovery scans trusted locations for executable files (`.exe`, `.bat`, `.cmd` on Windows) and builds an index of installed applications:
 
-1. **Trusted locations** — user-registered directories (e.g. `C:\Program Files`, `C:\Users\IshaanV\AppData\Roaming`)
+1. **Trusted locations** — user-registered directories (e.g. `C:\Program Files`, `C:\Users\user\AppData\Roaming`)
 2. **Name normalization** — app names are lowercased and stripped of version numbers and common suffixes
 3. **Path deduplication** — multiple paths for the same logical app are deduplicated, keeping the most recent
 4. **Type mapping** — apps are associated with file extensions they can open (based on Windows registry + known patterns)
@@ -67,7 +67,7 @@ App discovery scans trusted locations for executable files (`.exe`, `.bat`, `.cm
 ```
 add location C:\Program Files
 add location C:\Program Files (x86)
-add location C:\Users\IshaanV\AppData\Roaming
+add location C:\Users\user\AppData\Roaming
 add location D:\Applications
 ```
 
@@ -145,7 +145,7 @@ SILVIA selects the best application based on:
 ### Commands
 
 ```
-add location C:\Users\IshaanV\Documents
+add location C:\Users\user\Documents
 add location C:\Projects label:Projects
 remove location C:\OldStuff
 show locations

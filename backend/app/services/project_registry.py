@@ -56,9 +56,9 @@ PROJECT_REGISTRY: dict[str, dict] = {
         "status_detail": None,
         "notes": [],
     },
-    "nighthawk": {
-        "display_name": "Nighthawk",
-        "aliases": ["nighthawk"],
+    "storage-node": {
+        "display_name": "Storage Node",
+        "aliases": ["storage-node"],
         "description": "Raspberry Pi 4 NAS server.",
         "status": "active",
         "status_detail": None,
@@ -79,7 +79,7 @@ def find_project(name: str) -> dict | None:
 def list_projects() -> str:
     """Comma-separated list of known project names (excluding infrastructure nodes)."""
     return ", ".join(
-        p["display_name"] for k, p in PROJECT_REGISTRY.items() if k != "nighthawk"
+        p["display_name"] for k, p in PROJECT_REGISTRY.items() if k != "storage-node"
     )
 
 

@@ -50,7 +50,7 @@ _TYPE_FILE_PRIORITY: dict[str, list[str]] = {
 # Used to match vault folder structure to query entity names.
 
 _ENTITY_TO_PROJECT: dict[str, str] = {
-    "nighthawk":   "Nighthawk",
+    "storage-node":   "Storage Node",
     "cyberdeck":   "Cyberdeck",
     "dronehive":   "DroneHive",
     "droneHive":   "DroneHive",

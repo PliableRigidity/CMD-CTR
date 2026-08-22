@@ -1,7 +1,0 @@
-INFO:     Started server process [47188]
-INFO:     Waiting for application startup.
-2026-04-09 21:10:08 - backend.app.core.application - INFO - Assistant platform initialized
-INFO:     Application startup complete.
-ERROR:    [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8000): [winerror 10048] only one usage of each socket address (protocol/network address/port) is norma2026-04-09 21:10:15 - httpx - INFO - HTTP Request: POST http://localhost:11434/api/chat "HTTP/1.1 200 OK"
-ion - INFO - Assistant platform shutdown
-INFO:     Application shutdown complete.

@@ -9,8 +9,8 @@ from __future__ import annotations
 NOT_RECORDED = "not_recorded"
 
 DEVICE_REGISTRY: dict[str, dict] = {
-    "nighthawk": {
-        "display_name": "Nighthawk",
+    "storage-node": {
+        "display_name": "Storage Node",
         "type": "nas",
         "hardware": "Raspberry Pi 4",
         "description": "Personal NAS server.",

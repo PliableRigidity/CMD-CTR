@@ -36,7 +36,7 @@ API_KEY = os.getenv("API_KEY", "")
 # Brain63 — Obsidian vault path (READ-ONLY knowledge source for SILVIA)
 BRAIN63_VAULT_PATH = os.getenv(
     "BRAIN63_VAULT_PATH",
-    r"C:\Users\IshaanV\Documents\GitHub\Brain63",
+    "",
 )
 BRAIN_STEWARD_AUTODRAFT = os.getenv("BRAIN_STEWARD_AUTODRAFT", "false").lower() in ("true", "1", "yes")
 
