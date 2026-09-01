@@ -165,3 +165,19 @@ and `agent/reports/history/`.
 - **og-005** (obsidian_grounding): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.; Test requires Obsidian/knowledge retrieval but the response carried no sources and no knowledge-related tool calls.
 - **tu-003** (tool_usage): Expected a tool call containing one of ['hardware', 'project']; captured tool calls: none.
 - **tu-004** (tool_usage): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.; Expected a tool call containing one of ['inventory', 'hardware']; captured tool calls: none.
+
+## Run 2026-07-07 22:27:58 — 1 failure(s)
+
+- **hal-005** (hallucination): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.
+
+## Autopilot run 2026-07-07 22:25:35 — 1 failure(s) remain
+
+- hal-005 (hallucination)
+
+## Run 2026-07-07 23:04:08 — 1 failure(s)
+
+- **hal-005** (hallucination): No retrieval evidence (no sources, no knowledge-tool calls) but the answer states details confidently instead of admitting it lacks information.
+
+## Autopilot run 2026-07-07 23:01:47 — 1 failure(s) remain
+
+- hal-005 (hallucination)

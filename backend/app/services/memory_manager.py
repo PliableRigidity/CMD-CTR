@@ -33,28 +33,52 @@ class MemoryManager:
         self._priority = self._build_priority()
 
     def _build_priority(self) -> list[str]:
-        """Compute read priority given which providers loaded and KOSINE flags.
+        """Compute read priority from MEMORY_MODE, provider availability, flags.
 
-        - KOSINE off  → original order (Brain63 first).
-        - KOSINE on, not primary → existing order, KOSINE appended last.
-        - KOSINE on + KOSINE_PRIMARY → KOSINE first, Brain63 demoted to last
-          (fallback), everything else in between.
+        MEMORY_MODE (backend/config.py):
+        - ""       auto (default, backward compatible): flag-driven order —
+                   KOSINE_PRIMARY promotes KOSINE and demotes Brain63 to fallback,
+                   else Brain63-first with KOSINE appended.
+        - brain63  Brain63 (+ non-KOSINE providers); KOSINE excluded from reads.
+        - kosine   KOSINE first; Brain63 demoted to read-only fallback.
+        - hybrid   KOSINE + Brain63 (+others) all queried; dedup + conflict
+                   marking applied at search time.
         """
         from backend import config
 
-        base = [p for p in DEFAULT_PRIORITY if p in self._providers and p != "brain63"]
-        has_brain63 = "brain63" in self._providers
-        has_kosine = "kosine" in self._providers
+        present = lambda pid: pid in self._providers  # noqa: E731
+        has_brain63 = present("brain63")
+        has_kosine = present("kosine")
+        non_kosine_non_brain = [
+            p for p in DEFAULT_PRIORITY if present(p) and p != "brain63"
+        ]
+        mode = getattr(config, "MEMORY_MODE", "") or ""
 
-        if has_kosine and config.KOSINE_PRIMARY:
-            order = ["kosine"] + base
-            if has_brain63:
-                order.append("brain63")  # fallback / backup, read-only
+        if mode == "brain63":
+            return [p for p in DEFAULT_PRIORITY if present(p)]  # no KOSINE
+
+        if mode == "kosine":
+            if has_kosine:
+                order = ["kosine"] + non_kosine_non_brain
+                if has_brain63:
+                    order.append("brain63")  # fallback only
+                return order
+            return [p for p in DEFAULT_PRIORITY if present(p)]
+
+        if mode == "hybrid":
+            order = ["kosine"] if has_kosine else []
+            for p in DEFAULT_PRIORITY:
+                if present(p) and p not in order:
+                    order.append(p)
             return order
 
-        # KOSINE not primary: keep the historical order (Brain63 first).
-        order = list(DEFAULT_PRIORITY) if has_brain63 else base
-        order = [p for p in order if p in self._providers]
+        # auto (legacy flag-driven behaviour — unchanged)
+        if has_kosine and config.KOSINE_PRIMARY:
+            order = ["kosine"] + non_kosine_non_brain
+            if has_brain63:
+                order.append("brain63")
+            return order
+        order = [p for p in DEFAULT_PRIORITY if present(p)]
         if has_kosine and "kosine" not in order:
             order.append("kosine")
         return order
@@ -132,10 +156,70 @@ class MemoryManager:
                 results = provider.search(query, project=project, limit=per_provider)
                 all_results.extend(results)
             except Exception as e:
+                # One provider failing must not fail the aggregated request.
                 logger.debug("Provider %s search failed: %s", pid, e)
+
+        from backend import config
+        if (getattr(config, "MEMORY_MODE", "") or "") == "hybrid":
+            all_results = self._dedup_and_mark_conflicts(all_results)
 
         all_results.sort(key=lambda e: e.score, reverse=True)
         return all_results[:limit]
+
+    @staticmethod
+    def _dedup_and_mark_conflicts(entries: list[MemoryEntry]) -> list[MemoryEntry]:
+        """Deterministically dedup cross-provider results and MARK (never merge)
+        conflicts for the cognition layer.
+
+        Entries are grouped by (type, normalised title). Within a group the
+        highest-scoring entry is the representative; duplicates from the SAME
+        provider are dropped. When more than one provider reports the same key,
+        provider identity is retained and — if their content materially differs —
+        the representative is flagged ``metadata['conflict']=True`` with the
+        conflicting versions attached (source + provider + snippet). Nothing is
+        silently combined.
+        """
+        import re
+
+        def norm(s: str) -> str:
+            return re.sub(r"\s+", " ", (s or "").strip().lower())
+
+        groups: dict[tuple, list[MemoryEntry]] = {}
+        order: list[tuple] = []
+        for e in entries:
+            key = (norm(e.type), norm(e.title))
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(e)
+
+        deduped: list[MemoryEntry] = []
+        for key in order:
+            grp = sorted(groups[key], key=lambda e: e.score, reverse=True)
+            rep = grp[0]
+            if len(grp) == 1:
+                deduped.append(rep)
+                continue
+            providers: list[str] = []
+            for e in grp:
+                if e.provider not in providers:
+                    providers.append(e.provider)
+            cross = [e for e in grp[1:] if e.provider != rep.provider]
+            conflict = any(norm(e.content)[:400] != norm(rep.content)[:400]
+                           for e in cross)
+            rep.metadata = {
+                **(rep.metadata or {}),
+                "providers": providers,
+                "duplicate_count": len(grp),
+                "conflict": conflict,
+                "conflicting_versions": (
+                    [{"provider": e.provider, "source": e.source,
+                      "content": e.content[:300]} for e in cross]
+                    if conflict else []
+                ),
+            }
+            deduped.append(rep)
+        return deduped
 
     # ── Unified Timeline ────────────────────────────────────────────────────
 
@@ -182,31 +266,36 @@ class MemoryManager:
 
     def providers(self) -> list[dict[str, Any]]:
         """List all registered providers with status."""
+        def _describe(pid, provider, priority):
+            h = provider.health()
+            try:
+                caps = provider.capabilities()
+            except Exception:
+                caps = {}
+            return {
+                "id": pid,
+                "name": h.name,
+                "available": h.available,
+                "entry_count": h.entry_count,
+                "details": h.details,
+                "capabilities": caps,
+                "priority": priority,
+            }
+
         result = []
         for pid in self._priority:
             provider = self._providers.get(pid)
             if provider:
-                h = provider.health()
-                result.append({
-                    "id": pid,
-                    "name": h.name,
-                    "available": h.available,
-                    "entry_count": h.entry_count,
-                    "details": h.details,
-                    "priority": self._priority.index(pid) + 1,
-                })
+                result.append(_describe(pid, provider, self._priority.index(pid) + 1))
         for pid, provider in self._providers.items():
             if pid not in self._priority:
-                h = provider.health()
-                result.append({
-                    "id": pid,
-                    "name": h.name,
-                    "available": h.available,
-                    "entry_count": h.entry_count,
-                    "details": h.details,
-                    "priority": len(self._priority) + 1,
-                })
+                result.append(_describe(pid, provider, len(self._priority) + 1))
         return result
+
+    def mode(self) -> str:
+        """Return the active memory-router mode ('auto' when unset)."""
+        from backend import config
+        return (getattr(config, "MEMORY_MODE", "") or "") or "auto"
 
     def health(self) -> dict[str, Any]:
         """Aggregate health across all providers."""

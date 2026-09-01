@@ -66,3 +66,14 @@ class Brain63Provider(MemoryProvider):
             )
         except Exception as e:
             return ProviderHealth(name=self.name, available=False, details=str(e))
+
+    def capabilities(self) -> dict:
+        return {
+            "provider_id": self.provider_id,
+            "searchable": True,
+            "timeline": True,
+            "relationships": False,
+            "provenance": True,    # vault file_path is the source
+            "writable": False,     # strictly read-only vault archive
+            "remote": False,       # local filesystem, always available
+        }

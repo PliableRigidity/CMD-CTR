@@ -35,6 +35,24 @@ class ProviderHealth:
     details: str = ""
 
 
+@dataclass
+class MemoryWriteProposal:
+    """A proposed, not-yet-applied write to a memory provider.
+
+    Providers translate this into their own approval/audit machinery. Nothing
+    here writes directly — a proposal becomes a durable change only after review
+    (see the WorkflowEngine approval lifecycle).
+    """
+    operation: str                      # create | update | relate | event
+    object_type: str = ""               # provider object type (e.g. 'Decision')
+    content: dict = field(default_factory=dict)   # proposed fields
+    source_event: str = ""              # what produced this (event id / reason)
+    confidence: float = 0.5
+    requires_review: bool = True        # default: nothing auto-applies
+    idempotency_key: str = ""           # dedup guard for repeated proposals
+    provenance: dict = field(default_factory=dict)
+
+
 class MemoryProvider(ABC):
     """Abstract base for memory providers."""
 
@@ -79,3 +97,26 @@ class MemoryProvider(ABC):
     def relationships(self, entity: str = "", limit: int = 20) -> list[dict]:
         """Return relationships/connections (for graph-capable providers)."""
         return []
+
+    def propose_write(self, proposal: "MemoryWriteProposal") -> Optional[str]:
+        """Register a review-gated write proposal. Returns a proposal/workflow
+        id, or None if the provider does not support writes. Never writes
+        directly — approval happens elsewhere."""
+        return None
+
+    def capabilities(self) -> dict:
+        """Describe what this provider supports, for the router/cognition layer.
+
+        Default assumes a read-only, search-only provider. Providers override to
+        advertise writes, relationship traversal, provenance, or a live
+        network boundary. Keys are stable; add new ones additively.
+        """
+        return {
+            "provider_id": self.provider_id,
+            "searchable": True,
+            "timeline": True,
+            "relationships": False,
+            "provenance": False,
+            "writable": False,
+            "remote": False,
+        }

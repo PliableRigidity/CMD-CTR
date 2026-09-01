@@ -78,7 +78,7 @@ class MissionControlService:
         from backend.app.services.task_service import TaskService
         cutoff = (_now() - timedelta(days=days)).isoformat()
         tasks = TaskService().list_tasks(status="all")
-        return [t for t in tasks if t.status == "done" and t.completed_at and t.completed_at >= cutoff]
+        return [t for t in tasks if t.status == "completed" and t.completed_at and t.completed_at >= cutoff]
 
     def _reminders(self):
         from backend.app.services.reminder_service import ReminderService

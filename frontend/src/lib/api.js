@@ -1395,3 +1395,31 @@ export async function kosineApproveSuggestion(code) {
 export async function kosineRejectSuggestion(code) {
   return readJson(await _apiFetch(`${API_BASE}/kosine/suggestions/${encodeURIComponent(code)}/reject`, { method: "POST" }));
 }
+
+// ---------------------------------------------------------------------------
+// Cognitive Graph (Phase 5) — observable cognition activity, NOT model
+// chain-of-thought. Live events arrive on the shared events socket as
+// { type: "cognitive", event: {...} }.
+// ---------------------------------------------------------------------------
+
+export async function fetchCognitiveSnapshot(sessionId = "", limit = 300) {
+  const q = new URLSearchParams({ limit: String(limit) });
+  if (sessionId) q.set("session_id", sessionId);
+  return readJson(await _apiFetch(`${API_BASE}/cognitive/snapshot?${q.toString()}`));
+}
+
+export async function runCognitiveQuery(payload) {
+  return readJson(await _apiFetch(`${API_BASE}/cognitive/query`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  }));
+}
+
+export async function resetCognitive() {
+  return readJson(await _apiFetch(`${API_BASE}/cognitive/reset`, { method: "POST" }));
+}
+
+export async function fetchCognitiveHealth() {
+  return readJson(await _apiFetch(`${API_BASE}/cognitive/health`));
+}

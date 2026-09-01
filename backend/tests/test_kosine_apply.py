@@ -28,9 +28,10 @@ def kos_env(tmp_path, monkeypatch):
     monkeypatch.setattr(wfe, "DB_PATH", tmp_path / "cmdctr.db")
     monkeypatch.setattr(wfe, "_instance", None)
 
-    # KOSINE enabled, in-process, pointed at a temp db; writes OFF by default.
+    # KOSINE enabled, legacy in-process transport (this suite verifies writes
+    # actually land against a real KOSINE temp db); writes OFF by default.
     monkeypatch.setattr(config, "KOSINE_ENABLED", True)
-    monkeypatch.setattr(config, "KOSINE_BASE_URL", "")
+    monkeypatch.setattr(config, "KOSINE_TRANSPORT", "local")
     monkeypatch.setattr(config, "KOSINE_DB_PATH", str(tmp_path / "kosine.db"))
     monkeypatch.setattr(config, "KOSINE_ALLOW_WRITES", False)
     kosine_client.reset()

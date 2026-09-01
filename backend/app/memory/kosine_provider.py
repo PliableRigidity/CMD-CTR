@@ -145,6 +145,18 @@ class KosineProvider(MemoryProvider):
         except Exception as e:
             return ProviderHealth(name=self.name, available=False, details=str(e))
 
+    def capabilities(self) -> dict:
+        from backend import config
+        return {
+            "provider_id": self.provider_id,
+            "searchable": True,
+            "timeline": True,
+            "relationships": True,
+            "provenance": True,   # source_path + append-only events
+            "writable": bool(config.KOSINE_ALLOW_WRITES),  # gated + audited
+            "remote": True,       # network boundary — can be degraded/unreachable
+        }
+
     # ── writes (gated + audited) ────────────────────────────────────────────────
 
     def store(self, entry: dict) -> Optional[str]:
@@ -190,3 +202,44 @@ class KosineProvider(MemoryProvider):
         except Exception as e:
             logger.warning("KOSINE update failed: %s", e)
             return False
+
+    # ── review-gated write proposal (folds into the approval/audit lifecycle) ──
+
+    _OP_TOOL = {
+        "create": "create_memory",
+        "update": "update_memory",
+        "relate": "create_relationship",
+        "event": "add_event",
+    }
+
+    def propose_write(self, proposal) -> Optional[str]:
+        """Register a proposed KOSINE write as a review-gated ``kosine_suggestion``
+        workflow (draft). It writes NOTHING itself — the existing approval UI +
+        ``kosine_apply`` execute it (audited) only after a human approves and
+        ``KOSINE_ALLOW_WRITES`` is on. Returns the workflow code."""
+        tool = self._OP_TOOL.get(getattr(proposal, "operation", ""))
+        if not tool:
+            logger.warning("KOSINE propose_write: unsupported operation %r",
+                           getattr(proposal, "operation", None))
+            return None
+        args = dict(getattr(proposal, "content", {}) or {})
+        label = (args.get("title") or args.get("target")
+                 or getattr(proposal, "object_type", "") or proposal.operation)
+        try:
+            from backend.app.services.workflow_engine import get_workflow_engine
+            wf = get_workflow_engine().create(
+                category="kosine_suggestion",
+                title=f"KOSINE {proposal.operation}: {label}"[:120],
+                description=(getattr(proposal, "source_event", "")
+                            or f"Proposed {proposal.operation} from SILVIA cognition"),
+                risk_level="low",
+                tool_name=tool,
+                tool_args=args,
+                project="KOSINE",
+                template="kosine_suggestion",
+                auto_submit=False,
+            )
+            return wf.get("code")
+        except Exception as e:
+            logger.warning("KOSINE propose_write failed: %s", e)
+            return None

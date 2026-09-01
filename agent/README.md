@@ -102,9 +102,24 @@ cases — they are committed to git.
 
 ```bash
 python agent/run_silvia_autopilot.py --report-only                 # safe: tests + reports only
-python agent/run_silvia_autopilot.py --auto-repair                 # full loop (config max_iterations)
-python agent/run_silvia_autopilot.py --auto-repair --max-iterations 2
+python agent/run_silvia_autopilot.py --auto-repair                 # full loop (defaults: 2 iters, 20 min)
+python agent/run_silvia_autopilot.py --auto-repair --max-iterations 2 --max-runtime-minutes 15
 ```
+
+**Hardened defaults** (all overridable via flags or `config.json`):
+
+| Guard | Default | Flag |
+|---|---|---|
+| Max iterations | 2 | `--max-iterations` |
+| Max wall-clock runtime | 20 min | `--max-runtime-minutes` |
+| Stop after N non-improving rounds | 2 | `--stop-if-no-improvement-rounds` |
+| Stop if a category resists N repairs | 2 | `--max-same-failure-attempts` |
+| Per-repair coding-agent timeout | 600 s | `--coding-agent-timeout-seconds` |
+| Per-run test-suite timeout | 600 s | `--test-timeout-seconds` |
+| Cold-restart verify after a kept fix | on | `--no-fresh-backend-verify` |
+
+The coding-agent timeout is additionally clamped to the remaining runtime
+budget, so the loop always leaves time to write a report before the ceiling.
 
 Per iteration the autopilot:
 1. Starts the backend if it isn't running (and stops it again at the end).
@@ -121,15 +136,30 @@ Per iteration the autopilot:
    to the checkpoint (`rollback_on_worse`). No-improvement changes are also
    rolled back.
 
-Safety guards (each stops the loop with a blocker):
-- Agent touches `agent/test_cases/`, the evaluator/runner, AGENT.md, or
-  GROUNDING_POLICY.md → rollback + hard stop (no test-weakening).
-- Obsidian vault fingerprint (md count/size/mtime, `.obsidian` excluded)
-  changes during a repair → hard stop.
-- Same category still failing after `max_same_failure_attempts` repairs,
-  agent CLI fails twice in a row, rollback fails, or backend can't start.
+Safety guards (each stops the loop; the first two mark the run **UNSAFE**):
+- Agent touches `agent/test_cases/`, `evaluate_results.py`, `run_tests.py`,
+  the client/prompt generator, AGENT.md, or GROUNDING_POLICY.md → rollback +
+  hard stop, run flagged **UNSAFE**. Detected two ways every iteration: git
+  status **and** a content-hash snapshot of every protected file (catches
+  edits git might not surface). Process exits with code 2.
+- Obsidian vault note files change (md count/size/mtime fingerprint,
+  `.obsidian`/`.trash`/`.git` excluded) during a repair → rollback + hard
+  stop, flagged **UNSAFE**.
+- **Fresh-backend verification:** after a kept fix, a self-started backend is
+  cold-restarted and retested. If the fix regresses on a clean start (i.e. it
+  only worked via warm auto-reload state), the kept commit is rolled back and
+  the loop stops. Skipped when you started the backend yourself (the autopilot
+  won't kill a server it doesn't own).
+- Runtime ceiling, iteration ceiling, consecutive-no-improvement limit,
+  same-category-attempt limit, agent CLI failing twice, rollback failure, or
+  backend that can't start — each stops cleanly with a blocker.
+- **Ctrl+C** produces a clean partial report (the in-progress iteration's
+  state, a blocker noting possible uncommitted changes, and the latest score).
 - If the agent CLI isn't on PATH, the run degrades to report-only and writes
   a blocker — nothing is faked.
+
+`reports/autopilot_latest.md` is rewritten **after every iteration**, not just
+at the end, so you can watch progress live (and it survives a Ctrl+C).
 
 Outputs per run: `reports/autopilot_latest.md`,
 `reports/history/autopilot_<ts>.md`, `logs/autopilot_<ts>.json`, plus

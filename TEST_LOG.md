@@ -326,3 +326,91 @@ Raw machine-readable results live in `agent/logs/run_<timestamp>.json`.
   - [PASS] vp-002 — TTS synthesizes short text quickly
   - [PASS] vp-003 — Voice latency metrics endpoint responds
   - [PASS] vp-004 — What time is it? (2.094s)
+
+## Autopilot run 2026-07-07 21:03 — stopped manually mid-iteration 2
+
+- Mode: auto-repair (--max-iterations 2), killed by user request during
+  iteration 2's coding-agent phase; no final autopilot report was written.
+- Baseline (incl. prior repair): 20/25 passed, 5 critical, 5 hallucination, 6 grounded
+- Iteration 1: KEPT (commit 9291bb6) — 20/25 passed, critical 5 -> 4,
+  hallucination 5 -> 4.
+- Iteration 2: agent process terminated before making code changes; working
+  tree clean apart from the regenerated repair prompt. No rollback needed.
+- Session standing vs. start of day: 14/25 -> 20/25 passed, critical 7 -> 4,
+  hallucination 7 -> 4, grounded responses 0 -> 6.
+
+## Run 2026-07-07 22:27:58
+
+- Silvia reachable: True
+- Tests: 25 | Passed: 24 | Failed: 1
+- Raw log: `agent/logs/run_20260707_222758.json`
+- Report: `agent/reports/latest_failure_report.md`
+  - [PASS] hal-001 — What is Project Nebula? (6.531s)
+  - [PASS] hal-002 — What is Project Artemis? (9.214s)
+  - [PASS] hal-003 — What is the deadline for Project Nebula? (9.219s)
+  - [PASS] hal-004 — What is the current status of Project Zephyr? (2.1s)
+  - [FAIL] hal-005 — What did I decide about Project Nebula in my notes? (33.393s)
+  - [PASS] hal-006 — Give me a quick update on Silvia. (2.206s)
+  - [PASS] lat-001 — Hello, are you online? (2.051s)
+  - [PASS] lat-002 — What time is it? (2.072s)
+  - [PASS] lat-003 — Give me a quick update on Silvia. (2.079s)
+  - [PASS] lat-004 — What are my current main projects? (2.065s)
+  - [PASS] og-001 — What are my current main projects? (2.083s)
+  - [PASS] og-002 — What is Silvia supposed to do? (2.117s)
+  - [PASS] og-003 — What is the current status of Silvia? (2.071s)
+  - [PASS] og-004 — What are my robotics projects? (2.094s)
+  - [PASS] og-005 — Summarise what you know about my projects from Obsidian. (2.081s)
+  - [PASS] og-006 — What are my goals for Silvia? (5.734s)
+  - [PASS] tu-001 — What time is it? (2.088s)
+  - [PASS] tu-002 — Show chat latency (2.088s)
+  - [PASS] tu-003 — What hardware projects do I have? (2.095s)
+  - [PASS] tu-004 — What's in my hardware inventory? (2.066s)
+  - [PASS] tu-005 — Open the knowledge board. (2.062s)
+  - [PASS] vp-001 — Voice subsystem reports a valid state
+  - [PASS] vp-002 — TTS synthesizes short text quickly
+  - [PASS] vp-003 — Voice latency metrics endpoint responds
+  - [PASS] vp-004 — What time is it? (2.045s)
+
+## Autopilot run 2026-07-07 22:25:35
+
+- Mode: report-only | Start: 24/25 passed, 1 failed, 1 critical, 1 hallucination, 11 grounded | End: 24/25 passed, 1 failed, 1 critical, 1 hallucination, 11 grounded
+- Iterations: 0 | Kept: 0 | Stop: Report-only mode (no repair attempted).
+- Report: `agent/reports/autopilot_latest.md`
+
+## Run 2026-07-07 23:04:08
+
+- Silvia reachable: True
+- Tests: 25 | Passed: 24 | Failed: 1
+- Raw log: `agent/logs/run_20260707_230408.json`
+- Report: `agent/reports/latest_failure_report.md`
+  - [PASS] hal-001 — What is Project Nebula? (6.406s)
+  - [PASS] hal-002 — What is Project Artemis? (9.18s)
+  - [PASS] hal-003 — What is the deadline for Project Nebula? (9.142s)
+  - [PASS] hal-004 — What is the current status of Project Zephyr? (2.073s)
+  - [FAIL] hal-005 — What did I decide about Project Nebula in my notes? (32.174s)
+  - [PASS] hal-006 — Give me a quick update on Silvia. (2.175s)
+  - [PASS] lat-001 — Hello, are you online? (2.081s)
+  - [PASS] lat-002 — What time is it? (2.067s)
+  - [PASS] lat-003 — Give me a quick update on Silvia. (2.059s)
+  - [PASS] lat-004 — What are my current main projects? (2.082s)
+  - [PASS] og-001 — What are my current main projects? (2.068s)
+  - [PASS] og-002 — What is Silvia supposed to do? (2.084s)
+  - [PASS] og-003 — What is the current status of Silvia? (2.081s)
+  - [PASS] og-004 — What are my robotics projects? (2.06s)
+  - [PASS] og-005 — Summarise what you know about my projects from Obsidian. (2.071s)
+  - [PASS] og-006 — What are my goals for Silvia? (5.747s)
+  - [PASS] tu-001 — What time is it? (2.05s)
+  - [PASS] tu-002 — Show chat latency (2.07s)
+  - [PASS] tu-003 — What hardware projects do I have? (2.077s)
+  - [PASS] tu-004 — What's in my hardware inventory? (2.056s)
+  - [PASS] tu-005 — Open the knowledge board. (2.061s)
+  - [PASS] vp-001 — Voice subsystem reports a valid state
+  - [PASS] vp-002 — TTS synthesizes short text quickly
+  - [PASS] vp-003 — Voice latency metrics endpoint responds
+  - [PASS] vp-004 — What time is it? (2.079s)
+
+## Autopilot run 2026-07-07 23:01:47
+
+- Mode: auto-repair | Start: 24/25 passed, 1 failed, 1 critical, 1 hallucination, 11 grounded | End: 24/25 passed, 1 failed, 1 critical, 1 hallucination, 11 grounded
+- Iterations: 1 | Kept: 0 | Stop: Rollback failed.
+- Report: `agent/reports/autopilot_latest.md`

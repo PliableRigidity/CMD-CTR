@@ -1,5 +1,18 @@
 # Agent Changelog
 
+## 2026-07-07 — Autopilot rollback hardening (locked-log fix)
+
+- `rollback()` no longer uses `git reset --hard` (which touches every tracked
+  file, including the runtime `logs/app.log`/`logs/errors.log` the running
+  backend keeps open — on Windows that aborted the whole reset with "Invalid
+  argument" and spuriously reported "Rollback failed" even though the code
+  reverted correctly). It now restores only the changed code/doc files via
+  `git checkout <checkpoint> -- <files>`, skipping `logs/`. Lock-safe.
+- Triggered by the hal-005 auto-repair run: the ineffective repair WAS reverted
+  (assistant_router.py returned byte-identical to HEAD) but git reported failure
+  solely due to the locked logs. No Silvia app code was left changed.
+
+
 ## 2026-07-07 — QA repair iteration 2 (hallucination grounding, hardware routing, project evidence)
 
 **Failing tests targeted:** hal-005, og-001, og-005, tu-003, tu-004
@@ -91,3 +104,14 @@ date, what changed, why, and files touched. See AGENT.md rule 8.
 - Critical dropped 5 -> 4.; Hallucination failures dropped 5 -> 4.
 - Files: HANGELOG_AGENT.md, agent/reports/latest_repair_prompt.md, backend/app/services/conversation_service.py, backend/app/services/conversation_state.py, logs/app.log, logs/errors.log
 - Commit: 9291bb6cec0faac2e1ea73e013671b4bcc555d4a
+# 2026-08-25 — SILVIA Core V1 reliability consolidation
+
+- Added a deterministic core chat path for verified task, reminder, calendar, agenda, project-not-found, and work-recommendation operations.
+- Consolidated the existing task and reminder services with additive, non-destructive schema migrations and explicit lifecycle states.
+- Added duplicate avoidance, ambiguity-safe reference resolution, update/reschedule/reopen/cancel operations, and post-write verification.
+- Added persistent reminder delivery, acknowledgement, snooze, cancellation, failure, and recurrence state; prevented repeated one-time delivery attempts.
+- Added a verified Google Calendar gateway with create, update, delete, auth-failure, and external-failure handling.
+- Grounded explicit MAGI project requests before deliberation.
+- Made voice and wake-word initialization non-blocking/lazy and exposed core/optional readiness through `/health`.
+- Added log secret redaction and tests for URL tokens, API keys, authorization headers, and client secrets.
+- Added 18 Core V1 tests plus status and Phase 0 audit documents.

@@ -8,8 +8,10 @@ from backend.app.models.personal import (
     CalendarEventCreate,
     Reminder,
     ReminderCreate,
+    ReminderUpdate,
     Task,
     TaskCreate,
+    TaskUpdate,
 )
 from backend.app.services.calendar_service import CalendarService
 from backend.app.services.reminder_service import ReminderService
@@ -27,7 +29,8 @@ async def list_reminders(include_completed: bool = False):
 @router.post("/reminders", response_model=Reminder, status_code=201)
 async def create_reminder(data: ReminderCreate):
     return ReminderService().create_reminder(
-        message=data.message, trigger_at=data.trigger_at, recurrence=data.recurrence
+        message=data.message, trigger_at=data.trigger_at, recurrence=data.recurrence,
+        source=data.source, task_id=data.task_id, event_id=data.event_id,
     )
 
 
@@ -37,6 +40,30 @@ async def complete_reminder(reminder_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail="Reminder not found")
     return {"id": reminder_id, "completed": True}
+
+
+@router.patch("/reminders/{reminder_id}", response_model=Reminder)
+async def update_reminder(reminder_id: str, data: ReminderUpdate):
+    svc = ReminderService()
+    current = svc.get_reminder(reminder_id)
+    if not current:
+        raise HTTPException(status_code=404, detail={"error_type": "not_found", "message": "Reminder not found"})
+    if data.snoozed_until:
+        updated = svc.snooze(reminder_id, data.snoozed_until)
+    elif data.trigger_at:
+        updated = svc.reschedule(reminder_id, data.trigger_at)
+    else:
+        updated = svc._update(reminder_id, **data.model_dump(exclude_none=True))
+    if not updated:
+        raise HTTPException(status_code=500, detail={"error_type": "verification_failure", "message": "Reminder update was not persisted"})
+    return updated
+
+
+@router.post("/reminders/{reminder_id}/acknowledge", response_model=Reminder)
+async def acknowledge_reminder(reminder_id: str):
+    updated = ReminderService().acknowledge(reminder_id)
+    if not updated: raise HTTPException(status_code=404, detail={"error_type": "not_found", "message": "Reminder not found"})
+    return updated
 
 
 @router.delete("/reminders/{reminder_id}", status_code=204)
@@ -56,7 +83,9 @@ async def list_tasks(status: str = "pending"):
 @router.post("/tasks", response_model=Task, status_code=201)
 async def create_task(data: TaskCreate):
     return TaskService().create_task(
-        title=data.title, priority=data.priority, project=data.project
+        title=data.title, priority=data.priority, project=data.project,
+        description=data.description, due_at=data.due_at,
+        estimated_minutes=data.estimated_minutes, reminder_id=data.reminder_id,
     )
 
 
@@ -65,7 +94,28 @@ async def complete_task(task_id: str):
     ok = TaskService().complete_task(task_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Task not found")
-    return {"id": task_id, "status": "done"}
+    return {"id": task_id, "status": "completed"}
+
+
+@router.get("/tasks/{task_id}", response_model=Task)
+async def get_task(task_id: str):
+    task = TaskService().get_task(task_id)
+    if not task: raise HTTPException(status_code=404, detail={"error_type": "not_found", "message": "Task not found"})
+    return task
+
+
+@router.patch("/tasks/{task_id}", response_model=Task)
+async def update_task(task_id: str, data: TaskUpdate):
+    updated = TaskService().update_task(task_id, **data.model_dump(exclude_unset=True))
+    if not updated: raise HTTPException(status_code=404, detail={"error_type": "not_found", "message": "Task not found"})
+    return updated
+
+
+@router.post("/tasks/{task_id}/reopen", response_model=Task)
+async def reopen_task(task_id: str):
+    svc=TaskService()
+    if not svc.reopen_task(task_id): raise HTTPException(status_code=404, detail={"error_type": "not_found", "message": "Task not found"})
+    return svc.get_task(task_id)
 
 
 @router.delete("/tasks/{task_id}", status_code=204)

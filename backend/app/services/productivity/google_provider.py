@@ -438,3 +438,17 @@ class GoogleProvider(ProductivityProvider):
         except Exception:
             return False
 
+    def get_event(self, event_id: str) -> dict:
+        return _fmt_gcal_event(
+            self._calendar().events().get(calendarId="primary", eventId=event_id).execute()
+        )
+
+    def update_event(self, event_id: str, start_iso: str, end_iso: str | None = None) -> dict:
+        cal = self._calendar()
+        current = cal.events().get(calendarId="primary", eventId=event_id).execute()
+        start_dt = datetime.fromisoformat(start_iso)
+        end_dt = datetime.fromisoformat(end_iso) if end_iso else start_dt + timedelta(hours=1)
+        current["start"] = {"dateTime": start_dt.isoformat(), "timeZone": "UTC"}
+        current["end"] = {"dateTime": end_dt.isoformat(), "timeZone": "UTC"}
+        updated = cal.events().update(calendarId="primary", eventId=event_id, body=current).execute()
+        return _fmt_gcal_event(updated)

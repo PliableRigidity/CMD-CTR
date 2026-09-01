@@ -39,6 +39,14 @@ def _init_db() -> None:
                 created_at  TEXT NOT NULL
             );
         """)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(calendar_events)")}
+        additions = {
+            "timezone": "TEXT NOT NULL DEFAULT 'UTC'", "all_day": "INTEGER NOT NULL DEFAULT 0",
+            "external_calendar_id": "TEXT", "updated_at": "TEXT",
+        }
+        for name, declaration in additions.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE calendar_events ADD COLUMN {name} {declaration}")
         conn.commit()
     finally:
         conn.close()
@@ -81,8 +89,8 @@ class LocalCalendarAdapter(BaseCalendarAdapter):
         conn = _conn()
         try:
             rows = conn.execute(
-                "SELECT * FROM calendar_events WHERE start_at >= ? AND start_at <= ? ORDER BY start_at ASC",
-                (start.isoformat(), end.isoformat()),
+                "SELECT * FROM calendar_events WHERE substr(start_at,1,10) >= ? AND substr(start_at,1,10) < ? ORDER BY start_at ASC",
+                (start.date().isoformat(), end.date().isoformat()),
             ).fetchall()
             return [_row_to_event(r) for r in rows]
         finally:
@@ -94,9 +102,10 @@ class LocalCalendarAdapter(BaseCalendarAdapter):
         conn = _conn()
         try:
             conn.execute(
-                """INSERT INTO calendar_events (id, title, start_at, end_at, location, description, source, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (eid, data.title, data.start_at, data.end_at, data.location, data.description, data.source, now),
+                """INSERT INTO calendar_events (id, title, start_at, end_at, location, description, source, created_at,
+                   timezone, all_day, external_calendar_id, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (eid, data.title, data.start_at, data.end_at, data.location, data.description, data.source, now,
+                 data.timezone, int(data.all_day), data.external_calendar_id, now),
             )
             conn.commit()
         finally:
@@ -104,7 +113,31 @@ class LocalCalendarAdapter(BaseCalendarAdapter):
         return CalendarEvent(
             id=eid, title=data.title, start_at=data.start_at, end_at=data.end_at,
             location=data.location, description=data.description, source=data.source, created_at=now,
+            timezone=data.timezone, all_day=data.all_day, external_calendar_id=data.external_calendar_id, updated_at=now,
         )
+
+    def update_event(self, event_id: str, **changes) -> CalendarEvent | None:
+        allowed = {"title", "start_at", "end_at", "location", "description", "timezone", "all_day"}
+        values = {key: value for key, value in changes.items() if key in allowed and value is not None}
+        if not values:
+            return self.get_event(event_id)
+        values["updated_at"] = datetime.now(timezone.utc).isoformat()
+        assignments = ", ".join(f"{key} = ?" for key in values)
+        conn = _conn()
+        try:
+            conn.execute(f"UPDATE calendar_events SET {assignments} WHERE id = ?", (*values.values(), event_id))
+            conn.commit()
+        finally:
+            conn.close()
+        return self.get_event(event_id)
+
+    def get_event(self, event_id: str) -> CalendarEvent | None:
+        conn = _conn()
+        try:
+            row = conn.execute("SELECT * FROM calendar_events WHERE id = ?", (event_id,)).fetchone()
+            return _row_to_event(row) if row else None
+        finally:
+            conn.close()
 
     def delete_event(self, event_id: str) -> bool:
         conn = _conn()
@@ -144,6 +177,24 @@ class CalendarService:
 
     def create_event(self, data: CalendarEventCreate) -> CalendarEvent:
         return self._adapter(data.source).create_event(data)
+
+    def get_events(self, start: datetime, end: datetime) -> list[CalendarEvent]:
+        events: list[CalendarEvent] = []
+        seen: set[tuple] = set()
+        for adapter in self._adapters.values():
+            for event in adapter.get_events(start, end):
+                key = (event.source, event.external_calendar_id or event.id, event.title.lower(), event.start_at)
+                if key not in seen:
+                    seen.add(key); events.append(event)
+        return sorted(events, key=lambda item: item.start_at)
+
+    def get_event(self, event_id: str) -> CalendarEvent | None:
+        adapter = self._adapter()
+        return adapter.get_event(event_id) if hasattr(adapter, "get_event") else None
+
+    def update_event(self, event_id: str, **changes) -> CalendarEvent | None:
+        adapter = self._adapter()
+        return adapter.update_event(event_id, **changes) if hasattr(adapter, "update_event") else None
 
     def delete_event(self, event_id: str) -> bool:
         for adapter in self._adapters.values():

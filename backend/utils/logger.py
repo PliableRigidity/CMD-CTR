@@ -7,6 +7,7 @@ appropriate levels and formatting.
 
 import logging
 import logging.handlers
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +19,27 @@ LOG_DIR.mkdir(exist_ok=True)
 # Log file paths
 LOG_FILE = LOG_DIR / "app.log"
 ERROR_LOG_FILE = LOG_DIR / "errors.log"
+
+
+def redact_secrets(value: object) -> str:
+    """Redact common credentials in URLs, headers and free-form messages."""
+    text = str(value)
+    patterns = (
+        (r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+)[^\s,;]+", r"\1[REDACTED]"),
+        (r"(?i)([?&](?:token|access_token|refresh_token|api_key|key|code|client_secret)=)[^&\s]+", r"\1[REDACTED]"),
+        (r"(?i)(/(?:bot))[0-9]+:[A-Za-z0-9_-]+", r"\1[REDACTED]"),
+        (r"(?i)((?:api[_-]?key|client[_-]?secret|password|token)\s*[:=]\s*)[^\s,;]+", r"\1[REDACTED]"),
+    )
+    for pattern, replacement in patterns:
+        text = re.sub(pattern, replacement, text)
+    return text
+
+
+class SecretRedactionFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = redact_secrets(record.getMessage())
+        record.args = ()
+        return True
 
 
 def setup_logging(
@@ -50,6 +72,7 @@ def setup_logging(
         datefmt="%Y-%m-%d %H:%M:%S"
     )
     console_handler.setFormatter(console_format)
+    console_handler.addFilter(SecretRedactionFilter())
     root_logger.addHandler(console_handler)
     
     # File handler (all logs)
@@ -64,6 +87,7 @@ def setup_logging(
             "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
         )
         file_handler.setFormatter(file_format)
+        file_handler.addFilter(SecretRedactionFilter())
         root_logger.addHandler(file_handler)
     except PermissionError:
         root_logger.warning("Could not attach main log file handler; continuing with console logging only.")
@@ -80,6 +104,7 @@ def setup_logging(
             "%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s - %(exc_info)s"
         )
         error_handler.setFormatter(error_format)
+        error_handler.addFilter(SecretRedactionFilter())
         root_logger.addHandler(error_handler)
     except PermissionError:
         root_logger.warning("Could not attach error log file handler; continuing without file error logging.")

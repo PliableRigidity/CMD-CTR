@@ -53,6 +53,8 @@ const ADVANCED_NAV = [
   { label: "Planner",    href: "/planner" },
   { label: "Workflows",  href: "/workflows" },
   { label: "Brain63",    href: "/brain63" },
+  { label: "KOSINE",     href: "/kosine" },
+  { label: "Cognitive",  href: "/cognitive" },
   { label: "Voice",      href: "/voice" },
 ];
 

@@ -92,7 +92,17 @@ def parse_when(when_text: str) -> tuple[str, str]:
     recurrence: "once" | "daily" | "weekly:N" | "monthly:N"
     Raises ValueError if unparseable.
     """
-    now = datetime.now()  # naive local
+    from backend.app.services.datetime_service import parse_datetime
+    parsed = parse_datetime(when_text)
+    if parsed.utc_iso is None:
+        from zoneinfo import ZoneInfo
+        local = datetime.fromisoformat(parsed.resolved_date).replace(
+            hour=_DEFAULT_HOUR, minute=_DEFAULT_MIN, tzinfo=ZoneInfo(parsed.timezone)
+        )
+        return local.astimezone(timezone.utc).isoformat(), parsed.recurrence or "once"
+    return parsed.utc_iso, parsed.recurrence or "once"
+
+    now = datetime.now()  # legacy implementation retained below for reference
     text = when_text.lower().strip()
 
     # Extract explicit clock time
@@ -107,6 +117,24 @@ def parse_when(when_text: str) -> tuple[str, str]:
     else:
         clock = None
     h, mins = clock if clock else (_DEFAULT_HOUR, _DEFAULT_MIN)
+
+    # Explicit dates: "7 September", "September 7", optionally with a year.
+    date_m = re.search(
+        r'\b(?:(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|october|november|december)'
+        r'|(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}))'
+        r'(?:\s+(\d{4}))?\b', text,
+    )
+    if date_m:
+        months = {name.lower(): i for i, name in enumerate(
+            ("January", "February", "March", "April", "May", "June", "July", "August",
+             "September", "October", "November", "December"), 1)}
+        day = int(date_m.group(1) or date_m.group(4))
+        month = months[(date_m.group(2) or date_m.group(3)).lower()]
+        year = int(date_m.group(5) or now.year)
+        trigger = now.replace(year=year, month=month, day=day, hour=h, minute=mins, second=0, microsecond=0)
+        if not date_m.group(5) and trigger <= now:
+            trigger = trigger.replace(year=year + 1)
+        return _local_to_utc(trigger), 'once'
 
     # ── "in N seconds/minutes/hours/days" ────────────────────────────────────
     m = re.search(r'\bin\s+(\d+)\s+(second|minute|hour|day)s?\b', text)
@@ -252,6 +280,14 @@ def _split_remind_raw(raw: str) -> tuple[str, str]:
 
 def _parse_event_raw(raw: str) -> tuple[str, str, Optional[str]]:
     """Extract (title, start_text, end_text|None) from raw event description."""
+    from backend.app.services.datetime_service import parse_event_request
+    try:
+        title, parsed = parse_event_request(raw)
+        when_text = parsed.local_iso or parsed.resolved_date or ""
+        return title, when_text, None
+    except ValueError:
+        pass
+
     text = re.sub(
         r'^(?:create|add|schedule|book)\s+(?:a[n]?\s+)?(?:new\s+)?'
         r'(?:event|meeting|appointment|call)(?:\s+(?:called|named|titled))?\s*',
@@ -335,9 +371,13 @@ def list_reminders() -> dict:
 
 
 def delete_reminder(query: str) -> dict:
-    from backend.app.services.reminder_service import ReminderService
+    from backend.app.services.reminder_service import ReminderService, AmbiguousReminderError
     svc = ReminderService()
-    reminder = svc.find_by_query(query)
+    try:
+        reminder = svc.find_by_query(query)
+    except AmbiguousReminderError as exc:
+        return _make_result(False, "delete_reminder", "Multiple reminders match; specify one by ID.",
+                            {"matches": [{"id": r.id, "message": r.message} for r in exc.matches]}, "ambiguous_request")
     if not reminder:
         return _make_result(
             False, "delete_reminder",
@@ -354,9 +394,13 @@ def delete_reminder(query: str) -> dict:
 
 
 def complete_reminder(query: str) -> dict:
-    from backend.app.services.reminder_service import ReminderService
+    from backend.app.services.reminder_service import ReminderService, AmbiguousReminderError
     svc = ReminderService()
-    reminder = svc.find_by_query(query)
+    try:
+        reminder = svc.find_by_query(query)
+    except AmbiguousReminderError as exc:
+        return _make_result(False, "complete_reminder", "Multiple reminders match; specify one by ID.",
+                            {"matches": [{"id": r.id, "message": r.message} for r in exc.matches]}, "ambiguous_request")
     if not reminder:
         return _make_result(
             False, "complete_reminder",
@@ -392,7 +436,7 @@ def add_task(title: str, project: str = "") -> dict:
 def list_tasks(filter: str = "pending") -> dict:
     from backend.app.services.task_service import TaskService
     svc = TaskService()
-    status_key = filter if filter in ("pending", "done", "all") else "pending"
+    status_key = filter if filter in ("pending", "done", "open", "completed", "all") else "open"
     tasks = svc.list_tasks(status=status_key)
     data = [{"id": t.id, "title": t.title, "status": t.status,
              "priority": t.priority, "project": t.project} for t in tasks]
@@ -401,9 +445,13 @@ def list_tasks(filter: str = "pending") -> dict:
 
 
 def complete_task(query: str) -> dict:
-    from backend.app.services.task_service import TaskService
+    from backend.app.services.task_service import TaskService, AmbiguousTaskError
     svc = TaskService()
-    task = svc.find_by_query(query)
+    try:
+        task = svc.find_by_query(query)
+    except AmbiguousTaskError as exc:
+        return _make_result(False, "complete_task", "Multiple tasks match; specify one by ID.",
+                            {"matches": [{"id": t.id, "title": t.title} for t in exc.matches]}, "ambiguous_request")
     if not task:
         return _make_result(False, "complete_task", f"No task matching '{query}'.", None, "Not found.")
     svc.complete_task(task.id)
@@ -412,9 +460,13 @@ def complete_task(query: str) -> dict:
 
 
 def delete_task(query: str) -> dict:
-    from backend.app.services.task_service import TaskService
+    from backend.app.services.task_service import TaskService, AmbiguousTaskError
     svc = TaskService()
-    task = svc.find_by_query(query)
+    try:
+        task = svc.find_by_query(query)
+    except AmbiguousTaskError as exc:
+        return _make_result(False, "delete_task", "Multiple tasks match; specify one by ID.",
+                            {"matches": [{"id": t.id, "title": t.title} for t in exc.matches]}, "ambiguous_request")
     if not task:
         return _make_result(False, "delete_task", f"No task matching '{query}'.", None, "Not found.")
     svc.delete_task(task.id)

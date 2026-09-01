@@ -114,7 +114,7 @@ class ProjectIntelligence:
         try:
             with _hw_conn() as db:
                 rows = db.execute(
-                    "SELECT id, title, status, priority FROM tasks WHERE lower(project) LIKE lower(?) AND status != 'done' LIMIT 10",
+                    "SELECT id, title, status, priority FROM tasks WHERE lower(project) LIKE lower(?) AND status NOT IN ('done','completed','cancelled') LIMIT 10",
                     (f"%{name.lower()}%",),
                 ).fetchall()
                 open_tasks = [dict(r) for r in rows]

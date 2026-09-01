@@ -11,6 +11,7 @@ import PlannerPage from "./pages/PlannerPage";
 import WorkflowsPage from "./pages/WorkflowsPage";
 import Brain63Page from "./pages/Brain63Page";
 import KosinePage from "./pages/KosinePage";
+import CognitiveGraphPage from "./pages/CognitiveGraphPage";
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/workflows" element={<WorkflowsPage />} />
         <Route path="/brain63" element={<Brain63Page />} />
         <Route path="/kosine" element={<KosinePage />} />
+        <Route path="/cognitive" element={<CognitiveGraphPage />} />
         <Route path="/voice" element={<VoiceDiagnosticsPage />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

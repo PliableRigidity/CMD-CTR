@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from backend.app.api import actions, assistant, brain63, decision, desktop, devices, events, fleet, hardware, kosine, maps, memory, memory_providers, missions, mission_control, mode, nodes, observability, personal, planner, presence, productivity, project_intelligence, projects, safety, scheduled_tasks, services, system, telegram, voice, watch, web, workflows, workspace, world
+from backend.app.api import actions, assistant, brain63, cognitive, decision, desktop, devices, events, fleet, hardware, kosine, maps, memory, memory_providers, missions, mission_control, mode, nodes, observability, personal, planner, presence, productivity, project_intelligence, projects, safety, scheduled_tasks, scheduling, services, system, telegram, voice, watch, web, workflows, workspace, world
 from backend.app.core.auth_middleware import AuthMiddleware
 from backend.app.models.nodes import NodeMetricsUpdate
 from backend.app.orchestration.assistant_router import AssistantPlatformRouter
@@ -475,12 +475,17 @@ async def _reminder_loop(router: AssistantPlatformRouter) -> None:
                         "alert": alert.model_dump(),
                     })
                     await router.event_service.emit("[REM]", reminder.message, "info")
-
-                if reminder.recurrence == "once":
-                    reminder_svc.complete_reminder(reminder.id)
-                else:
-                    reminder_svc.advance_recurrence(reminder.id)
-                    watch_svc.resolve_alert(f"reminder:{reminder.id}")
+                    # Persist proof of delivery before changing the schedule.
+                    reminder_svc.record_delivery(reminder.id, delivered=True)
+                    if reminder.recurrence != "once":
+                        reminder_svc.advance_recurrence(reminder.id)
+                        watch_svc.resolve_alert(f"reminder:{reminder.id}")
+                elif reminder.delivery_status != "delivered":
+                    # A deduplicated Watch alert is not proof that this attempt
+                    # delivered. Record a visible failure rather than retrying
+                    # every minute or pretending success.
+                    reminder_svc.record_delivery(reminder.id, delivered=False,
+                                                  error="notification alert was not created")
         except Exception as exc:
             logger.warning("Reminder loop error: %s", exc)
         await asyncio.sleep(60)
@@ -604,19 +609,37 @@ async def _print_startup_health() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    app.state.readiness = {"core": "initializing", "optional": "initializing"}
     router = AssistantPlatformRouter()
     app.state.router = router
     logger.info("Assistant platform initialized")
+    # Core persistence is ready as soon as the canonical services can open.
+    from backend.app.services.task_service import TaskService
+    from backend.app.services.reminder_service import ReminderService
+    TaskService(); ReminderService()
+    app.state.readiness["core"] = "healthy"
+
+    # Wire the cognitive-event bus to the existing WebSocket fan-out so live
+    # cognitive activity streams to the Cognitive Graph. Provider-agnostic.
+    try:
+        from backend.app.services.cognition.events import get_cognitive_bus
+        bus = get_cognitive_bus()
+        bus.clear_publishers()
+        bus.register_publisher(router.event_service.emit_ws_only)
+        logger.info("Cognitive event bus wired to WebSocket fan-out")
+    except Exception as e:
+        logger.warning("Cognitive bus wiring failed: %s", e)
 
     # Pre-warm wake word detector in a thread so model downloads and ONNX
     # session creation happen at startup, not on the first WS connection.
-    loop = asyncio.get_event_loop()
-    try:
-        from backend.voice.wakeword.detector import get_detector
-        await loop.run_in_executor(None, get_detector)
-        logger.info("Wake word detector pre-warmed")
-    except Exception as exc:
-        logger.warning("Wake word detector pre-warm failed (non-fatal): %s", exc)
+    async def _warm_wake_word():
+        try:
+            from backend.voice.wakeword.detector import get_detector
+            await asyncio.get_running_loop().run_in_executor(None, get_detector)
+            logger.info("Wake word detector pre-warmed")
+        except Exception as exc:
+            logger.warning("Wake word detector pre-warm failed (non-fatal): %s", exc)
+    asyncio.create_task(_warm_wake_word())
 
     # Retroactively index existing messages into semantic memory (non-blocking)
     async def _index_existing_messages():
@@ -659,10 +682,18 @@ async def lifespan(app: FastAPI):
 
     # Telegram bridge — starts only when TELEGRAM_ENABLED=true
     from backend.app.services.telegram_bridge import start_bridge, stop_bridge
-    await start_bridge(router)
+    telegram_start_task = asyncio.create_task(start_bridge(router))
 
     # ── Startup health summary ─────────────────────────────────────────────
-    await _print_startup_health()
+    async def _optional_readiness():
+        try:
+            await telegram_start_task
+            await _print_startup_health()
+            app.state.readiness["optional"] = "healthy"
+        except Exception as exc:
+            app.state.readiness["optional"] = "degraded"
+            logger.warning("Optional startup services degraded: %s", exc)
+    asyncio.create_task(_optional_readiness())
 
     yield
 
@@ -696,7 +727,11 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health() -> dict:
-        return {"status": "ok", "service": "silvia", "version": "4.0.0"}
+        readiness = getattr(app.state, "readiness", {"core": "initializing", "optional": "initializing"})
+        status = "healthy" if readiness.get("core") == "healthy" and readiness.get("optional") == "healthy" else (
+            "degraded" if readiness.get("core") == "healthy" else "initializing"
+        )
+        return {"status": status, "service": "silvia", "version": "4.0.0", "readiness": readiness}
 
     app.include_router(assistant.router, prefix="/api")
     app.include_router(decision.router, prefix="/api")
@@ -709,6 +744,7 @@ def create_app() -> FastAPI:
     app.include_router(web.router, prefix="/api")
     app.include_router(system.router, prefix="/api")
     app.include_router(events.router, prefix="/api")
+    app.include_router(scheduling.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
     app.include_router(missions.router, prefix="/api")
     app.include_router(nodes.router, prefix="/api")
@@ -734,5 +770,6 @@ def create_app() -> FastAPI:
     app.include_router(memory_providers.router, prefix="/api")
     app.include_router(brain63.router, prefix="/api")
     app.include_router(presence.router, prefix="/api")
+    app.include_router(cognitive.router, prefix="/api")
     app.include_router(kosine.router, prefix="/api")
     return app

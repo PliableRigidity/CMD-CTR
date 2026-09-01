@@ -24,7 +24,7 @@ CORS_ALLOW_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
         "CORS_ALLOW_ORIGINS",
-        "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:8001,http://localhost:8001",
+        "http://127.0.0.1:5173,http://localhost:5173,http://127.0.0.1:5174,http://localhost:5174,http://127.0.0.1:8001,http://localhost:8001",
     ).split(",")
     if origin.strip()
 ]
@@ -40,30 +40,53 @@ BRAIN63_VAULT_PATH = os.getenv(
 )
 BRAIN_STEWARD_AUTODRAFT = os.getenv("BRAIN_STEWARD_AUTODRAFT", "false").lower() in ("true", "1", "yes")
 
+# ── Memory router mode ──────────────────────────────────────────────────────────
+# Selects how the MemoryManager orders/queries providers.
+#   ""        — auto: legacy flag-driven order (KOSINE_PRIMARY etc.); default,
+#               fully backward compatible.
+#   brain63   — Brain63 (+ non-KOSINE providers); KOSINE excluded from reads.
+#   kosine    — KOSINE first; Brain63 demoted to read-only fallback.
+#   hybrid    — query KOSINE and Brain63 (+others); results normalised, deduped,
+#               conflicts marked; one provider failing does not fail the request.
+MEMORY_MODE = os.getenv("MEMORY_MODE", "").strip().lower()
+
 # ── KOSINE — structured memory backend (Phase 19) ───────────────────────────────
-# KOSINE is a local-first structured knowledge system (GitHub/KOS). SILVIA talks to
-# it in-process via kos.sdk.KOSClient. Migration is gradual: KOSINE becomes the
-# PRIMARY read provider only when KOSINE_PRIMARY is set; Brain63 stays as a
-# read-only fallback/backup. Every flag defaults OFF so nothing changes until each
-# stage is validated.
+# KOSINE is a standalone local-first structured knowledge system (GitHub/KOS).
+# SILVIA talks to it ONLY over its public REST contract (POST /agent/tool/{name})
+# via a SILVIA-owned HTTP client — no `import kos`, no direct DB access. KOSINE
+# runs independently (e.g. `python server.py` on 127.0.0.1:8000); SILVIA detects
+# availability and degrades to Brain63 if it is down. Every flag defaults OFF so
+# nothing changes until each stage is validated.
 #
 #   KOSINE_ENABLED             — register the KOSINE memory provider at all
 #   KOSINE_PRIMARY             — promote KOSINE to first read priority (Brain63 → fallback)
-#   KOSINE_DB_PATH             — target SQLite db (default: KOSINE's own kosine.db)
-#   KOSINE_BASE_URL            — if set, use REST mode instead of in-process SDK
-#   KOSINE_REPO_PATH           — fallback sys.path entry if `import kos` is not installed
+#   KOSINE_TRANSPORT           — 'rest' (compliant, default) or 'local' (legacy in-process SDK; migration/dev only)
+#   KOSINE_BASE_URL            — KOSINE REST service URL (compliant transport)
+#   KOSINE_TIMEOUT_SECONDS     — per-request HTTP timeout
+#   KOSINE_MAX_RETRIES         — bounded retries (exponential backoff) on transient failures
+#   KOSINE_API_TOKEN           — optional Bearer token if KOSINE auth is enabled
 #   KOSINE_ALLOW_WRITES        — permit SILVIA-originated writes (create/update/relate)
 #   KOSINE_MAINTENANCE_AUTODRAFT — let the maintenance loop auto-draft suggestion workflows
+#   KOSINE_REPO_PATH / KOSINE_DB_PATH — legacy 'local' transport only (migration)
 KOSINE_ENABLED = os.getenv("KOSINE_ENABLED", "false").lower() in ("true", "1", "yes")
 KOSINE_PRIMARY = os.getenv("KOSINE_PRIMARY", "false").lower() in ("true", "1", "yes")
-KOSINE_REPO_PATH = os.getenv("KOSINE_REPO_PATH", "")
+KOSINE_TRANSPORT = os.getenv("KOSINE_TRANSPORT", "rest").strip().lower()
+KOSINE_BASE_URL = os.getenv("KOSINE_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+KOSINE_TIMEOUT_SECONDS = float(os.getenv("KOSINE_TIMEOUT_SECONDS", "15"))
+KOSINE_MAX_RETRIES = int(os.getenv("KOSINE_MAX_RETRIES", "2"))
+KOSINE_API_TOKEN = os.getenv("KOSINE_API_TOKEN", "")
+KOSINE_ALLOW_WRITES = os.getenv("KOSINE_ALLOW_WRITES", "false").lower() in ("true", "1", "yes")
+KOSINE_MAINTENANCE_AUTODRAFT = os.getenv("KOSINE_MAINTENANCE_AUTODRAFT", "false").lower() in ("true", "1", "yes")
+# Migration runs via KOSINE's own public CLI (spec-compliant): SILVIA shells out
+# to it, never importing kos or opening the DB itself.
+#   KOSINE_CLI — CLI invocation. "" = auto-detect (the `kosine` entry point on
+#                PATH, else `python <KOSINE_REPO_PATH>/kos.py`).
+KOSINE_CLI = os.getenv("KOSINE_CLI", "")
+KOSINE_REPO_PATH = os.getenv("KOSINE_REPO_PATH", r"C:\Users\IshaanV\Documents\GitHub\KOS")
 KOSINE_DB_PATH = os.getenv(
     "KOSINE_DB_PATH",
     str(Path(KOSINE_REPO_PATH) / "kosine.db"),
 )
-KOSINE_BASE_URL = os.getenv("KOSINE_BASE_URL", "")  # empty = in-process SDK mode
-KOSINE_ALLOW_WRITES = os.getenv("KOSINE_ALLOW_WRITES", "false").lower() in ("true", "1", "yes")
-KOSINE_MAINTENANCE_AUTODRAFT = os.getenv("KOSINE_MAINTENANCE_AUTODRAFT", "false").lower() in ("true", "1", "yes")
 
 # External notifications (Watch Officer alerts)
 NOTIFICATION_WEBHOOK_URL     = os.getenv("NOTIFICATION_WEBHOOK_URL", "")

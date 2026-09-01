@@ -462,6 +462,22 @@ class ConversationService:
             f"Category={_route.category} Owner={_route.owner} Confidence={_route.confidence}%",
         )
 
+        # SILVIA Core: one deterministic path for everyday persistent state.
+        # This runs before social, planner, workflows and MAGI so an LLM can
+        # never claim a task/reminder/calendar mutation succeeded on its own.
+        from backend.app.services.core_assistant import handle_core_intent
+        _core = handle_core_intent(_raw_q)
+        if _core is not None:
+            await self._emit_tool(
+                "[CORE]",
+                f"operation={_core['result']['operation']} ok={_core['result']['ok']} "
+                f"verification={_core['result'].get('verification', {})}",
+                "info" if _core["result"]["ok"] else "warning",
+            )
+            _core_response = self._personal_response(_core["title"], _core["answer"], _core["result"])
+            _persist(_core_response.answer)
+            return _stamp(_core_response)
+
         # "show command routing" / "show last route" — display classification log
         if _route.owner == "RoutingLog":
             _is_last = bool(re.match(r"^(?:show\s+)?last\s+route", _raw_q, re.I))
@@ -6002,12 +6018,18 @@ class ConversationService:
         return "\n".join(lines)
 
     def _personal_response(self, title: str, answer: str, result: dict) -> AssistantResponse:
+        # Core V1/V2 results use ``operation`` while legacy tool adapters use
+        # ``tool`` and ``summary``.  Keep this formatter compatible with both
+        # shapes so a successfully-routed persistent action cannot become a
+        # browser-level 500 after execution.
+        operation = result.get("tool") or result.get("operation") or "personal_operation"
+        summary = result.get("summary") or answer
         return AssistantResponse(
             mode="conversation",
             title=title,
             answer=answer,
             confidence=0.97,
-            reasoning=f"Personal ops tool: {result['tool']}",
+            reasoning=f"Personal ops tool: {operation}",
             processing_time_ms=0,
             sources=[],
             agents=[AgentStatus(
@@ -6015,12 +6037,12 @@ class ConversationService:
                 role="assistant",
                 state="complete",
                 confidence=97,
-                summary=result["summary"],
+                summary=summary,
             )],
             logs=[CommandLogEntry(
                 timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 title=title,
-                detail=result["summary"],
+                detail=summary,
                 level="info" if result["ok"] else "error",
             )],
             payload={"tool_result": result, "speech_text": sanitize_for_speech(answer)},
@@ -6065,7 +6087,7 @@ class ConversationService:
             if len(by_project) > 1:
                 lines.append(f"  [{proj}]")
             for t in proj_tasks:
-                tick = "✓" if t["status"] == "done" else "·"
+                tick = "✓" if t["status"] in ("done", "completed") else "·"
                 prio = f" ({t['priority']})" if t["priority"] != "normal" else ""
                 lines.append(f"    {tick} {t['title']}{prio}")
         return "\n".join(lines)
